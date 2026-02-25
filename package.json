@@ -2,8 +2,9 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/controllers/server.js",
   "scripts": {
+    "start": "node src/controllers/server.js",
     "dev": "nodemon ./src/controllers/server.js",
     "start:prod": "NODE_ENV=production pm2 start ecosystem.config.cjs --env production",
     "stop": "pm2 stop fonlok-backend",
