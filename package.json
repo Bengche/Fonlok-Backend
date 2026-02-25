@@ -1,0 +1,39 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon ./src/controllers/server.js",
+    "start:prod": "NODE_ENV=production pm2 start ecosystem.config.cjs --env production",
+    "stop": "pm2 stop fonlok-backend",
+    "logs": "pm2 logs fonlok-backend",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "axios": "^1.13.5",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "nodemon": "^3.1.11",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.16.3",
+    "web-push": "^3.6.7",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "xss": "^1.0.15"
+  }
+}
