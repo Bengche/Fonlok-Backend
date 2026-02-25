@@ -67,8 +67,20 @@ const app = express();
 // Browsers send an OPTIONS preflight before every cross-origin request.
 // If any middleware runs before CORS and modifies/rejects the response,
 // the browser sees no Access-Control-Allow-Origin header and aborts.
+
+// Support a comma-separated FRONTEND_URL for multiple allowed origins.
+// e.g. FRONTEND_URL=https://fonlok.vercel.app,https://fonlok.com,https://www.fonlok.com
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, "")); // strip trailing slashes
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, mobile apps, server-to-server)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
 };
