@@ -73,9 +73,9 @@ const app = express();
 // If any middleware runs before CORS and modifies/rejects the response,
 // the browser sees no Access-Control-Allow-Origin header and aborts.
 
-// Support a comma-separated FRONTEND_URL for multiple allowed origins.
-// e.g. FRONTEND_URL=https://fonlok.vercel.app,https://fonlok.com,https://www.fonlok.com
-const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || "http://localhost:3000")
+// Support a comma-separated ALLOWED_ORIGINS for multiple allowed origins.
+// e.g. ALLOWED_ORIGINS=https://fonlok.vercel.app,https://fonlok.com,https://www.fonlok.com
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
   .split(",")
   .map((o) => o.trim().replace(/\/$/, "")); // strip trailing slashes
 
