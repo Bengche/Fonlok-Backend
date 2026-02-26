@@ -248,14 +248,84 @@ export async function processSuccessfulPayment(paymentUUID) {
     }
   }
 
-  // 9. Notify seller
+  // 9. Notify seller — in-app bell + push + email
+  // ─────────────────────────────────────────────────────────────────────────
+  // In-app / push notification (non-fatal)
   notifyUser(
     idUser,
     "invoice_paid",
-    "Invoice Paid",
-    `Your invoice has been paid - ${payment.amount} XAF is now held in escrow for invoice ${invoice_number}.`,
+    "💰 Invoice Paid — Deliver Now",
+    `Invoice ${invoice_number} has been paid. ${payment.amount} XAF is secured in escrow. Please deliver what was ordered so funds can be released to you.`,
     { invoiceNumber: invoice_number, amount: payment.amount },
   );
+
+  // Email notification to seller
+  try {
+    const sellerResult = await db.query(
+      "SELECT email, name FROM users WHERE id = $1 LIMIT 1",
+      [idUser],
+    );
+    if (sellerResult.rows.length > 0) {
+      const seller = sellerResult.rows[0];
+      const sellerDashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+      const sellerChatLink     = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
+      const sellerFirstName    = (seller.name || "there").split(" ")[0];
+      // Buyer name from guests table (best-effort)
+      let buyerName = "the buyer";
+      try {
+        const guestName = await db.query(
+          "SELECT name FROM guests WHERE invoicenumber = $1 ORDER BY created_at DESC LIMIT 1",
+          [invoice_number],
+        );
+        if (guestName.rows[0]?.name) buyerName = guestName.rows[0].name;
+      } catch (_) { /* non-fatal */ }
+
+      const sellerMsg = {
+        to: seller.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: `✅ Invoice Paid — Please Deliver | Invoice ${invoice_number} | Fonlok`,
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Your Invoice Has Been Paid</h2>
+          <p style="color:#475569;">Hi ${sellerFirstName}, great news! <strong>${buyerName}</strong> has paid your invoice and the funds are now held securely in Fonlok escrow.</p>
+          <p style="color:#475569;margin-bottom:20px;">Your next step is to deliver the goods or service you promised. Once the buyer confirms receipt, the funds will be released directly to you.</p>
+          ${emailTable([
+            ["Invoice Number", invoice_number],
+            [
+              "Amount in Escrow",
+              `${payment.amount} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
+            ["Buyer", buyerName],
+            [
+              "Escrow Status",
+              "&#10003;&nbsp;Funds Secured",
+              "color:#16a34a;font-weight:600;",
+            ],
+          ])}
+          <h3 style="color:#0F1F3D;margin:24px 0 8px;">What to do now</h3>
+          <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
+            <li>Deliver the product or service you agreed on with the buyer.</li>
+            <li>Use the chat to keep the buyer updated and share proof of delivery.</li>
+            <li>Once the buyer confirms receipt, Fonlok will release your funds immediately.</li>
+          </ol>
+          ${emailButton(sellerChatLink, "Open Chat with Buyer")}
+          ${emailButton(sellerDashboardLink, "Go to Dashboard")}
+          <p style="color:#94a3b8;font-size:13px;margin-top:20px;">The funds will remain in escrow until the buyer confirms delivery. If there is a problem, either party may open a dispute and Fonlok will mediate fairly.</p>`,
+          {
+            footerNote:
+              "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
+          },
+        ),
+      };
+      await sgMail.send(sellerMsg);
+      console.log("✅  Invoice-paid email sent to seller.");
+    }
+  } catch (sellerEmailErr) {
+    console.error(
+      "⚠️  Could not send invoice-paid email to seller:",
+      sellerEmailErr.response?.body ?? sellerEmailErr.message,
+    );
+  }
 
   return "done";
 }
