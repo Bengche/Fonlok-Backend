@@ -10,6 +10,11 @@
  *   sgMail.send({ from: BRAND.supportEmail, ... });
  */
 
+// Derive the live frontend URL from the environment, falling back to the
+// production URL so that emails sent in non-local environments are never wrong.
+const _siteUrl = (process.env.FRONTEND_URL || "https://fonlok.com").replace(/\/$/, "");
+const _domain = _siteUrl.replace(/^https?:\/\/(?:www\.)?/, "");
+
 export const BRAND = {
   // The product name used in emails, logs, and API responses
   name: "Fonlok",
@@ -17,11 +22,11 @@ export const BRAND = {
   // Full tagline
   tagline: "Secure escrow payments for Cameroon",
 
-  // The root domain (no trailing slash)
-  domain: "fonlok.com",
+  // The root domain (no trailing slash) — derived from FRONTEND_URL
+  domain: _domain,
 
-  // Primary website URL
-  siteUrl: "https://fonlok.com",
+  // Primary website URL — driven by FRONTEND_URL env var
+  siteUrl: _siteUrl,
 
   // Support / contact email — used as the sender in all outgoing emails
   supportEmail: "support@fonlok.com",

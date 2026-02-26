@@ -7,6 +7,7 @@ import sgMail from "@sendgrid/mail";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { emailWrap, emailButton } from "../utils/emailTemplate.js";
+import { BRAND } from "../config/brand.js";
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // ─── Ensure the reset-token columns exist ────────────────────────────────────
@@ -64,7 +65,7 @@ router.post(
         [token, expires, user.id],
       );
 
-      const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+      const resetLink = `${BRAND.siteUrl}/reset-password?token=${token}`;
 
       const msg = {
         to: email.toLowerCase().trim(),

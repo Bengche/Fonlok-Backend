@@ -13,6 +13,7 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from "pdf-lib";
 import crypto from "crypto";
 import db from "../controllers/db.js";
+import { BRAND } from "../config/brand.js";
 
 // ── Helper: draw text horizontally centred around a given cx ─────────────────
 function drawCentred(page, text, { cx, y, size, font, color, opacity }) {
@@ -159,7 +160,7 @@ export async function generateReceiptPdf(invoice_number) {
     font: bold,
     color: white,
   });
-  drawRight(page, "fonlok.com", {
+  drawRight(page, BRAND.domain, {
     rx: width - margin,
     y: height - headerH + (headerH - 10) / 2 - 2,
     size: 8.5,
@@ -642,7 +643,7 @@ export async function generateReceiptPdf(invoice_number) {
     color: navy,
   });
   page.drawText(
-    "Enter at  fonlok.com/verify  to confirm this receipt is authentic and unaltered.",
+    `Enter at  ${BRAND.domain}/verify  to confirm this receipt is authentic and unaltered.`,
     {
       x: vbX + 12,
       y: vbY + 8,
@@ -672,7 +673,7 @@ export async function generateReceiptPdf(invoice_number) {
   );
   drawCentred(
     page,
-    "This document is cryptographically signed and does not require a physical signature.  |  fonlok.com",
+    `This document is cryptographically signed and does not require a physical signature.  |  ${BRAND.domain}`,
     {
       cx: width / 2,
       y: 44,
