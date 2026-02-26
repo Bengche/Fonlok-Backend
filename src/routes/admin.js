@@ -264,7 +264,7 @@ router.get("/payments", adminMiddleware, async (req, res) => {
            p.id,
            p.amount,
            p.status,
-           p.method,
+           p.provider,
            p.createdat,
            p.providerpaymentid,
            i.invoicenumber,
