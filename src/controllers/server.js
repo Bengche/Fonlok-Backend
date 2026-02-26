@@ -29,6 +29,11 @@ import path from "path";
 import logger from "../utils/logger.js";
 import { sanitizeBody } from "../middleware/sanitize.js";
 import {
+  maintenanceGuard,
+  paymentsGuard,
+  payoutsGuard,
+} from "../middleware/platformGuard.js";
+import {
   generalLimiter,
   loginLimiter,
   registerLimiter,
@@ -176,11 +181,11 @@ app.post("/auth/login", loginLimiter);
 app.post("/auth/register", registerLimiter);
 app.post("/auth/forgot-password", forgotPasswordLimiter);
 app.post("/auth/reset-password", resetPasswordLimiter);
-app.post("/api/requestPayment", paymentByIpLimiter, paymentByInvoiceLimiter);
+app.post("/api/requestPayment", paymentByIpLimiter, paymentByInvoiceLimiter, paymentsGuard);
 app.post("/invoice/create", invoiceCreateLimiter);
 app.post("/dispute/open/:invoice_number", actionLimiter);
-app.post("/api/release-funds", actionLimiter);
-app.get("/api/release-milestone/:token", actionLimiter);
+app.post("/api/release-funds", actionLimiter, payoutsGuard);
+app.get("/api/release-milestone/:token", actionLimiter, payoutsGuard);
 app.patch("/invoice/milestone/:milestone_id/complete", actionLimiter);
 app.post("/invoice/resend-email/:invoice_number", actionLimiter);
 
@@ -190,6 +195,15 @@ app.post("/admin/login", adminLoginLimiter);
 // All other /admin/* routes get a moderate cap to prevent data exfiltration.
 app.use("/admin", adminApiLimiter);
 // ────────────────────────────────────────────────────────────────────────────
+
+// ── Maintenance mode guard ────────────────────────────────────────────────────
+// Blocks all non-admin traffic with HTTP 503 when maintenance_mode is enabled.
+// Admin routes are exempted so the dashboard stays accessible during maintenance.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/admin")) return next();
+  maintenanceGuard(req, res, next);
+});
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000;
 
@@ -344,4 +358,46 @@ app.listen(PORT, async () => {
   }
 
   await startScheduledJobs();
+
+  // Create platform_settings table for maintenance mode and payment/payout toggles.
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS platform_settings (
+        key        VARCHAR(100)  PRIMARY KEY,
+        value      TEXT          NOT NULL DEFAULT 'false',
+        updated_at TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("platform_settings table ready");
+  } catch (err) {
+    logger.warn("platform_settings migration failed", { error: err.message });
+  }
+
+  // Create balance_adjustments audit log (manual admin credit/debit).
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS balance_adjustments (
+        id          SERIAL        PRIMARY KEY,
+        admin_email VARCHAR(255)  NOT NULL,
+        user_id     INTEGER       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        amount      NUMERIC(12,2) NOT NULL,
+        type        VARCHAR(10)   NOT NULL CHECK (type IN ('credit', 'debit')),
+        reason      TEXT          NOT NULL,
+        created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("balance_adjustments table ready");
+  } catch (err) {
+    logger.warn("balance_adjustments migration failed", { error: err.message });
+  }
+
+  // Add wallet_balance column to users (admin-credited funds for MoMo failure refunds).
+  try {
+    await db.query(
+      "ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC(12,2) NOT NULL DEFAULT 0",
+    );
+    logger.info("users.wallet_balance column ready");
+  } catch (err) {
+    logger.warn("users.wallet_balance migration failed", { error: err.message });
+  }
 });

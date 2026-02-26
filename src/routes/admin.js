@@ -7,6 +7,7 @@ import adminMiddleware from "../middleware/adminMiddleware.js";
 import sgMail from "@sendgrid/mail";
 import { emailWrap } from "../utils/emailTemplate.js";
 import { BRAND } from "../config/brand.js";
+import { getSettings, setSetting, bool } from "../utils/platformSettings.js";
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
@@ -172,7 +173,9 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       escrowBalance: parseFloat(escrowBalanceResult.rows[0].total),
 
       // Referral earnings accumulated by users but not yet withdrawn
-      pendingReferralBalance: parseFloat(pendingReferralBalanceResult.rows[0].total),
+      pendingReferralBalance: parseFloat(
+        pendingReferralBalanceResult.rows[0].total,
+      ),
     });
   } catch (err) {
     console.error("Admin stats error:", err);
@@ -707,6 +710,194 @@ router.get("/broadcasts", adminMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Admin broadcasts history error:", err);
     res.status(500).json({ message: "Failed to load message history." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/public-status  (NO auth — called by the frontend on every load)
+// Returns the three operational flags so the UI can surface banners/blocks.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/public-status", async (req, res) => {
+  try {
+    const s = await getSettings();
+    res.json({
+      maintenanceMode: bool(s, "maintenance_mode"),
+      paymentsBlocked: bool(s, "payments_blocked"),
+      payoutsBlocked: bool(s, "payouts_blocked"),
+    });
+  } catch (err) {
+    // If table doesn't exist yet, return all-clear defaults.
+    res.json({ maintenanceMode: false, paymentsBlocked: false, payoutsBlocked: false });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/settings
+// Returns all platform operational toggles.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/settings", adminMiddleware, async (req, res) => {
+  try {
+    const s = await getSettings();
+    res.json({
+      maintenanceMode: bool(s, "maintenance_mode"),
+      paymentsBlocked: bool(s, "payments_blocked"),
+      payoutsBlocked: bool(s, "payouts_blocked"),
+    });
+  } catch (err) {
+    console.error("Admin get-settings error:", err);
+    res.status(500).json({ message: "Failed to load settings." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/settings
+// Body: { key: 'maintenance_mode' | 'payments_blocked' | 'payouts_blocked', value: boolean }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/settings", adminMiddleware, async (req, res) => {
+  const ALLOWED_KEYS = ["maintenance_mode", "payments_blocked", "payouts_blocked"];
+  const { key, value } = req.body;
+
+  if (!ALLOWED_KEYS.includes(key)) {
+    return res.status(400).json({ message: "Invalid setting key." });
+  }
+  if (typeof value !== "boolean") {
+    return res.status(400).json({ message: "Value must be a boolean." });
+  }
+
+  try {
+    await setSetting(key, value);
+    console.log(`⚙️  Admin updated platform setting: ${key} = ${value}`);
+    res.json({ message: "Setting updated.", key, value });
+  } catch (err) {
+    console.error("Admin update-settings error:", err);
+    res.status(500).json({ message: "Failed to update setting." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/adjust-balance
+// Manually credit or debit a user's wallet_balance.
+// Required body: { userId, amount, type: 'credit'|'debit', reason }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/adjust-balance", adminMiddleware, async (req, res) => {
+  const { userId, amount, type, reason } = req.body;
+
+  if (!userId) return res.status(400).json({ message: "userId is required." });
+  if (!type || !["credit", "debit"].includes(type))
+    return res.status(400).json({ message: "type must be 'credit' or 'debit'." });
+
+  const amt = parseFloat(amount);
+  if (isNaN(amt) || amt <= 0)
+    return res.status(400).json({ message: "amount must be a positive number." });
+
+  if (!reason || reason.trim().length < 5)
+    return res.status(400).json({ message: "A reason note of at least 5 characters is required." });
+
+  try {
+    // Verify user exists
+    const userResult = await db.query(
+      "SELECT id, name, email FROM users WHERE id = $1",
+      [userId],
+    );
+    if (!userResult.rows.length)
+      return res.status(404).json({ message: "User not found." });
+    const user = userResult.rows[0];
+
+    // When debiting, ensure the user has enough balance
+    if (type === "debit") {
+      const balRes = await db.query(
+        "SELECT wallet_balance FROM users WHERE id = $1",
+        [userId],
+      );
+      const current = parseFloat(balRes.rows[0]?.wallet_balance || 0);
+      if (amt > current) {
+        return res.status(400).json({
+          message: `Insufficient wallet balance. Current balance: ${current} XAF.`,
+        });
+      }
+    }
+
+    // Apply the adjustment atomically
+    const delta = type === "credit" ? amt : -amt;
+    await db.query(
+      "UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2",
+      [delta, userId],
+    );
+
+    // Record in audit log
+    const adminToken = req.cookies?.adminToken;
+    let adminEmail = "admin";
+    try {
+      const decoded = jwt.verify(adminToken, process.env.JWT_SECRET);
+      adminEmail = decoded.email || "admin";
+    } catch (_) {}
+
+    await db.query(
+      `INSERT INTO balance_adjustments
+         (admin_email, user_id, amount, type, reason)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [adminEmail, userId, amt, type, reason.trim()],
+    );
+
+    console.log(
+      `🏦 Admin ${adminEmail} ${type}ed ${amt} XAF for user ${userId} (${user.email}): ${reason.trim()}`,
+    );
+
+    // Fetch new balance to return
+    const newBalRes = await db.query(
+      "SELECT wallet_balance FROM users WHERE id = $1",
+      [userId],
+    );
+
+    res.json({
+      message: `${type === "credit" ? "Credited" : "Debited"} ${amt} XAF ${type === "credit" ? "to" : "from"} ${user.name}'s wallet.`,
+      newBalance: parseFloat(newBalRes.rows[0].wallet_balance),
+    });
+  } catch (err) {
+    console.error("Admin adjust-balance error:", err);
+    res.status(500).json({ message: "Failed to apply balance adjustment." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/adjustments?page=1&limit=20
+// Paginated audit log of all manual balance adjustments.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/adjustments", adminMiddleware, async (req, res) => {
+  const { page, limit, offset } = getPagination(req.query);
+
+  try {
+    const [dataResult, countResult] = await Promise.all([
+      db.query(
+        `SELECT
+           a.id,
+           a.admin_email,
+           a.amount,
+           a.type,
+           a.reason,
+           a.created_at,
+           u.name  AS user_name,
+           u.email AS user_email
+         FROM balance_adjustments a
+         JOIN users u ON u.id = a.user_id
+         ORDER BY a.created_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+      db.query("SELECT COUNT(*) FROM balance_adjustments"),
+    ]);
+
+    const total = parseInt(countResult.rows[0].count);
+
+    res.json({
+      data: dataResult.rows,
+      total,
+      page,
+      hasMore: offset + limit < total,
+    });
+  } catch (err) {
+    console.error("Admin adjustments error:", err);
+    res.status(500).json({ message: "Failed to load adjustment log." });
   }
 });
 
