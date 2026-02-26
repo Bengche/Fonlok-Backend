@@ -93,6 +93,8 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       revenueResult,
       referralEarningsResult,
       referralUsersResult,
+      escrowBalanceResult,
+      pendingReferralBalanceResult,
     ] = await Promise.all([
       // Total registered users
       db.query("SELECT COUNT(*) FROM users"),
@@ -130,6 +132,19 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       db.query(
         "SELECT COUNT(DISTINCT referred_by) FROM users WHERE referred_by IS NOT NULL",
       ),
+
+      // Escrow balance: payments received but invoice not yet completed (held by platform)
+      db.query(
+        `SELECT COALESCE(SUM(p.amount), 0) AS total
+         FROM payments p
+         JOIN invoices i ON i.id = p.invoiceid
+         WHERE p.status = 'paid' AND i.status IN ('paid', 'delivered')`,
+      ),
+
+      // Pending referral balance: sum of referral_balance not yet withdrawn by users
+      db.query(
+        "SELECT COALESCE(SUM(referral_balance), 0) AS total FROM users WHERE referral_balance > 0",
+      ),
     ]);
 
     res.json({
@@ -152,6 +167,12 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       ),
 
       activeReferrers: parseInt(referralUsersResult.rows[0].count),
+
+      // Money currently held in escrow (paid by buyer, not yet released to seller)
+      escrowBalance: parseFloat(escrowBalanceResult.rows[0].total),
+
+      // Referral earnings accumulated by users but not yet withdrawn
+      pendingReferralBalance: parseFloat(pendingReferralBalanceResult.rows[0].total),
     });
   } catch (err) {
     console.error("Admin stats error:", err);
