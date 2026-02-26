@@ -380,10 +380,70 @@ router.delete("/delete/:id", authMiddleware, async (req, res) => {
   }
 });
 
-router.patch("/edit/:id", async (req, res) => {
+router.patch("/edit/:id", authMiddleware, async (req, res) => {
   const invoice_number = req.params.id;
   const { invoicename, currency, amount } = req.body;
+
   try {
+    // 1. Check the invoice exists
+    const invoiceCheck = await db.query(
+      "SELECT * FROM invoices WHERE invoicenumber = $1",
+      [invoice_number],
+    );
+    if (invoiceCheck.rows.length === 0) {
+      return res.status(404).json({ message: "Invoice not found." });
+    }
+
+    const invoice = invoiceCheck.rows[0];
+
+    // 2. Ensure the authenticated user owns this invoice
+    if (invoice.userid !== req.user.id) {
+      return res.status(403).json({
+        message: "You are not authorized to edit this invoice.",
+      });
+    }
+
+    // 3. Block editing if the invoice has entered the payment lifecycle
+    if (["paid", "delivered", "completed"].includes(invoice.status)) {
+      const statusMessages = {
+        paid: "This invoice cannot be edited because the buyer has already paid. Funds are held in escrow.",
+        delivered:
+          "This invoice cannot be edited because delivery has been marked and is awaiting buyer confirmation.",
+        completed:
+          "This invoice cannot be edited because the payout has already been processed.",
+      };
+      return res.status(403).json({
+        message: statusMessages[invoice.status],
+      });
+    }
+
+    // 4. Block editing if a payment is currently being processed (race-condition guard).
+    //    This prevents a seller from changing the amount while a buyer is in the middle
+    //    of completing a payment for this invoice.
+    const pendingPaymentCheck = await db.query(
+      "SELECT * FROM payments WHERE invoiceid = $1 AND status = 'pending'",
+      [invoice.id],
+    );
+    if (pendingPaymentCheck.rows.length > 0) {
+      return res.status(403).json({
+        message:
+          "This invoice cannot be edited because a payment is currently being processed.",
+      });
+    }
+
+    // 5. Block editing if a payout has already been recorded for this invoice
+    const payoutCheck = await db.query(
+      "SELECT * FROM payouts WHERE invoice_id = $1 AND status = 'paid'",
+      [invoice.id],
+    );
+    if (payoutCheck.rows.length > 0) {
+      return res.status(403).json({
+        message:
+          "This invoice cannot be edited because a payout has already been made.",
+      });
+    }
+
+    // 6. All checks passed — safe to update
     const cleanName = invoicename === "" ? null : invoicename;
     const cleanCurrency = currency === "" ? null : currency;
     const cleanAmount = amount === "" ? null : amount;
@@ -391,14 +451,13 @@ router.patch("/edit/:id", async (req, res) => {
       "UPDATE invoices SET invoicename = COALESCE($1, invoicename), currency = COALESCE($2, currency), amount = COALESCE($3, amount) WHERE invoicenumber = $4 RETURNING *",
       [cleanName, cleanCurrency, cleanAmount, invoice_number],
     );
-    if (result.rows.length === 0) {
-      console.log(`No Invoice Found`);
-    }
     const editedInvoice = result.rows;
     res.status(200).json({ invoice: editedInvoice });
   } catch (error) {
-    // res.json(500).json({ message: `Error Editing Invoice` });
     console.log(error.message);
+    res
+      .status(500)
+      .json({ message: "An error occurred while editing the invoice." });
   }
 });
 
