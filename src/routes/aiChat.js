@@ -18,26 +18,40 @@ const aiChatLimiter = rateLimit({
 // ── Gemini 2.0 Flash — key rotation across multiple free-tier projects ────────
 // Add up to 5 keys from different Google projects (each gives 1,500 req/day).
 // The router tries each key in order and skips to the next on a 429 response.
-// With 4 keys that's 6,000 req/day free.
+// With 5 keys that's 7,500 req/day free. Falls back to Groq if all exhausted.
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
+// ── Groq fallback — llama-3.3-70b-versatile ───────────────────────────────────
+// Groq free tier: 14,400 req/day per key. Supports multiple keys via
+// GROQ_API_KEY, GROQ_API_KEY_2 … GROQ_API_KEY_5
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
 function getGeminiKeys() {
-  const keys = [
+  return [
     process.env.GEMINI_API_KEY,
     process.env.GEMINI_API_KEY_2,
     process.env.GEMINI_API_KEY_3,
     process.env.GEMINI_API_KEY_4,
     process.env.GEMINI_API_KEY_5,
-  ].filter(Boolean); // drop any that aren't set
-  return keys;
+  ].filter(Boolean);
+}
+
+function getGroqKeys() {
+  return [
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_2,
+    process.env.GROQ_API_KEY_3,
+    process.env.GROQ_API_KEY_4,
+    process.env.GROQ_API_KEY_5,
+  ].filter(Boolean);
 }
 
 // Call Gemini, rotating through keys on 429. Returns { ok, status, data, body }
 async function callGemini(payload) {
   const keys = getGeminiKeys();
-  if (keys.length === 0)
-    return { ok: false, status: 503, body: "No API keys configured" };
+  if (keys.length === 0) return { ok: false, status: 503, body: "No Gemini keys configured", exhausted: false };
   for (const key of keys) {
     const res = await fetch(`${GEMINI_URL}?key=${key}`, {
       method: "POST",
@@ -45,20 +59,53 @@ async function callGemini(payload) {
       body: JSON.stringify(payload),
     });
     if (res.status === 429) {
-      logger.warn("Gemini key quota hit, trying next key", {
-        keyPrefix: key.slice(0, 8),
-      });
-      continue; // try next key
+      logger.warn("Gemini key quota hit, trying next key", { keyPrefix: key.slice(0, 8) });
+      continue;
     }
     const data = await res.json();
     return { ok: res.ok, status: res.status, data };
   }
-  // All keys exhausted
-  return {
-    ok: false,
-    status: 429,
-    body: "All Gemini API keys have hit their quota",
-  };
+  logger.warn("All Gemini keys exhausted — falling back to Groq");
+  return { ok: false, status: 429, body: "All Gemini keys exhausted", exhausted: true };
+}
+
+// Call Groq (OpenAI-compatible), rotating through keys on 429.
+async function callGroq(systemPrompt, messages) {
+  const keys = getGroqKeys();
+  if (keys.length === 0) return { ok: false, status: 503, body: "No Groq keys configured" };
+
+  // Convert Gemini-format contents → OpenAI messages
+  const openaiMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((m) => ({
+      role: m.role === "model" ? "assistant" : "user",
+      content: m.parts[0].text,
+    })),
+  ];
+
+  for (const key of keys) {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: openaiMessages,
+        max_tokens: 600,
+        temperature: 0.65,
+        top_p: 0.92,
+      }),
+    });
+    if (res.status === 429) {
+      logger.warn("Groq key quota hit, trying next key", { keyPrefix: key.slice(0, 8) });
+      continue;
+    }
+    const data = await res.json();
+    return { ok: res.ok, status: res.status, data, provider: "groq" };
+  }
+  return { ok: false, status: 429, body: "All Groq keys exhausted" };
 }
 
 // ── System prompt — Kila's identity and mission ───────────────────────────────
@@ -189,14 +236,14 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
       return res.status(400).json({ error: "messages array is required" });
     }
 
-    // Hard cap: only send the last 10 messages to keep token usage in check
-    const recent = messages.slice(-10);
-
-    const keys = getGeminiKeys();
-    if (keys.length === 0) {
-      logger.error("No GEMINI_API_KEY configured");
+    // Ensure at least one provider is configured
+    if (getGeminiKeys().length === 0 && getGroqKeys().length === 0) {
+      logger.error("No AI API keys configured (Gemini or Groq)");
       return res.status(503).json({ error: "AI service is not configured" });
     }
+
+    // Hard cap: only send the last 10 messages to keep token usage in check
+    const recent = messages.slice(-10);
 
     // Build context note injected at the end of the system prompt
     let contextNote = "";
@@ -230,45 +277,46 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
     if (contents.length === 0)
       return res.status(400).json({ error: "No user message found" });
 
-    const aiResult = await callGemini({
+    const geminiPayload = {
       system_instruction: { parts: [{ text: SYSTEM_PROMPT + contextNote }] },
       contents,
       generationConfig: { maxOutputTokens: 600, temperature: 0.65, topP: 0.92 },
       safetySettings: [
-        {
-          category: "HARM_CATEGORY_HARASSMENT",
-          threshold: "BLOCK_MEDIUM_AND_ABOVE",
-        },
-        {
-          category: "HARM_CATEGORY_HATE_SPEECH",
-          threshold: "BLOCK_MEDIUM_AND_ABOVE",
-        },
-        {
-          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-          threshold: "BLOCK_MEDIUM_AND_ABOVE",
-        },
+        { category: "HARM_CATEGORY_HARASSMENT",       threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH",      threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
       ],
-    });
+    };
+
+    let aiResult = await callGemini(geminiPayload);
+
+    // If all Gemini keys are exhausted, fall back to Groq automatically
+    if (!aiResult.ok && aiResult.exhausted) {
+      aiResult = await callGroq(SYSTEM_PROMPT + contextNote, contents);
+    }
 
     if (!aiResult.ok) {
-      logger.error("Gemini API error (all keys tried)", {
-        status: aiResult.status,
-      });
+      logger.error("AI API error (all providers tried)", { status: aiResult.status });
       return res.status(502).json({
         error: "AI service temporarily unavailable. Please try again shortly.",
       });
     }
 
-    const data = aiResult.data;
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    // Extract reply — different schema for Gemini vs Groq (OpenAI format)
+    let reply;
+    if (aiResult.provider === "groq") {
+      reply = aiResult.data?.choices?.[0]?.message?.content;
+    } else {
+      reply = aiResult.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    }
 
     if (!reply) {
-      logger.warn("Gemini returned empty or blocked response", {
-        finishReason: data.candidates?.[0]?.finishReason,
-      });
+      const finishReason = aiResult.provider === "groq"
+        ? aiResult.data?.choices?.[0]?.finish_reason
+        : aiResult.data?.candidates?.[0]?.finishReason;
+      logger.warn("AI returned empty or blocked response", { finishReason, provider: aiResult.provider ?? "gemini" });
       return res.status(200).json({
-        reply:
-          "I wasn't able to generate a response for that. Could you rephrase your question?",
+        reply: "I wasn't able to generate a response for that. Could you rephrase your question?",
       });
     }
 
