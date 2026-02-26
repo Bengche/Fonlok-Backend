@@ -52,7 +52,13 @@ function getGroqKeys() {
 // Call Gemini, rotating through keys on 429. Returns { ok, status, data, body }
 async function callGemini(payload) {
   const keys = getGeminiKeys();
-  if (keys.length === 0) return { ok: false, status: 503, body: "No Gemini keys configured", exhausted: false };
+  if (keys.length === 0)
+    return {
+      ok: false,
+      status: 503,
+      body: "No Gemini keys configured",
+      exhausted: false,
+    };
   for (const key of keys) {
     const res = await fetch(`${GEMINI_URL}?key=${key}`, {
       method: "POST",
@@ -60,20 +66,28 @@ async function callGemini(payload) {
       body: JSON.stringify(payload),
     });
     if (res.status === 429) {
-      logger.warn("Gemini key quota hit, trying next key", { keyPrefix: key.slice(0, 8) });
+      logger.warn("Gemini key quota hit, trying next key", {
+        keyPrefix: key.slice(0, 8),
+      });
       continue;
     }
     const data = await res.json();
     return { ok: res.ok, status: res.status, data };
   }
   logger.warn("All Gemini keys exhausted — falling back to Groq");
-  return { ok: false, status: 429, body: "All Gemini keys exhausted", exhausted: true };
+  return {
+    ok: false,
+    status: 429,
+    body: "All Gemini keys exhausted",
+    exhausted: true,
+  };
 }
 
 // Call Groq (OpenAI-compatible), rotating through keys on 429.
 async function callGroq(systemPrompt, messages) {
   const keys = getGroqKeys();
-  if (keys.length === 0) return { ok: false, status: 503, body: "No Groq keys configured" };
+  if (keys.length === 0)
+    return { ok: false, status: 503, body: "No Groq keys configured" };
 
   // Convert Gemini-format contents → OpenAI messages
   const openaiMessages = [
@@ -100,7 +114,9 @@ async function callGroq(systemPrompt, messages) {
       }),
     });
     if (res.status === 429) {
-      logger.warn("Groq key quota hit, trying next key", { keyPrefix: key.slice(0, 8) });
+      logger.warn("Groq key quota hit, trying next key", {
+        keyPrefix: key.slice(0, 8),
+      });
       continue;
     }
     const data = await res.json();
@@ -292,9 +308,18 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
       contents,
       generationConfig: { maxOutputTokens: 600, temperature: 0.65, topP: 0.92 },
       safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT",       threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH",      threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE",
+        },
+        {
+          category: "HARM_CATEGORY_HATE_SPEECH",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE",
+        },
+        {
+          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE",
+        },
       ],
     };
 
@@ -306,7 +331,9 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
     }
 
     if (!aiResult.ok) {
-      logger.error("AI API error (all providers tried)", { status: aiResult.status });
+      logger.error("AI API error (all providers tried)", {
+        status: aiResult.status,
+      });
       return res.status(502).json({
         error: "AI service temporarily unavailable. Please try again shortly.",
       });
@@ -321,12 +348,17 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
     }
 
     if (!reply) {
-      const finishReason = aiResult.provider === "groq"
-        ? aiResult.data?.choices?.[0]?.finish_reason
-        : aiResult.data?.candidates?.[0]?.finishReason;
-      logger.warn("AI returned empty or blocked response", { finishReason, provider: aiResult.provider ?? "gemini" });
+      const finishReason =
+        aiResult.provider === "groq"
+          ? aiResult.data?.choices?.[0]?.finish_reason
+          : aiResult.data?.candidates?.[0]?.finishReason;
+      logger.warn("AI returned empty or blocked response", {
+        finishReason,
+        provider: aiResult.provider ?? "gemini",
+      });
       return res.status(200).json({
-        reply: "I wasn't able to generate a response for that. Could you rephrase your question?",
+        reply:
+          "I wasn't able to generate a response for that. Could you rephrase your question?",
       });
     }
 

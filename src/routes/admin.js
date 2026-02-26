@@ -727,7 +727,11 @@ router.get("/public-status", async (req, res) => {
     });
   } catch (err) {
     // If table doesn't exist yet, return all-clear defaults.
-    res.json({ maintenanceMode: false, paymentsBlocked: false, payoutsBlocked: false });
+    res.json({
+      maintenanceMode: false,
+      paymentsBlocked: false,
+      payoutsBlocked: false,
+    });
   }
 });
 
@@ -754,7 +758,11 @@ router.get("/settings", adminMiddleware, async (req, res) => {
 // Body: { key: 'maintenance_mode' | 'payments_blocked' | 'payouts_blocked', value: boolean }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/settings", adminMiddleware, async (req, res) => {
-  const ALLOWED_KEYS = ["maintenance_mode", "payments_blocked", "payouts_blocked"];
+  const ALLOWED_KEYS = [
+    "maintenance_mode",
+    "payments_blocked",
+    "payouts_blocked",
+  ];
   const { key, value } = req.body;
 
   if (!ALLOWED_KEYS.includes(key)) {
@@ -784,14 +792,20 @@ router.post("/adjust-balance", adminMiddleware, async (req, res) => {
 
   if (!userId) return res.status(400).json({ message: "userId is required." });
   if (!type || !["credit", "debit"].includes(type))
-    return res.status(400).json({ message: "type must be 'credit' or 'debit'." });
+    return res
+      .status(400)
+      .json({ message: "type must be 'credit' or 'debit'." });
 
   const amt = parseFloat(amount);
   if (isNaN(amt) || amt <= 0)
-    return res.status(400).json({ message: "amount must be a positive number." });
+    return res
+      .status(400)
+      .json({ message: "amount must be a positive number." });
 
   if (!reason || reason.trim().length < 5)
-    return res.status(400).json({ message: "A reason note of at least 5 characters is required." });
+    return res
+      .status(400)
+      .json({ message: "A reason note of at least 5 characters is required." });
 
   try {
     // Verify user exists

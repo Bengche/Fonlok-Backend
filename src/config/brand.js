@@ -12,7 +12,10 @@
 
 // Derive the live frontend URL from the environment, falling back to the
 // production URL so that emails sent in non-local environments are never wrong.
-const _siteUrl = (process.env.FRONTEND_URL || "https://fonlok.com").replace(/\/$/, "");
+const _siteUrl = (process.env.FRONTEND_URL || "https://fonlok.com").replace(
+  /\/$/,
+  "",
+);
 const _domain = _siteUrl.replace(/^https?:\/\/(?:www\.)?/, "");
 
 export const BRAND = {

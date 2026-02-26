@@ -181,7 +181,12 @@ app.post("/auth/login", loginLimiter);
 app.post("/auth/register", registerLimiter);
 app.post("/auth/forgot-password", forgotPasswordLimiter);
 app.post("/auth/reset-password", resetPasswordLimiter);
-app.post("/api/requestPayment", paymentByIpLimiter, paymentByInvoiceLimiter, paymentsGuard);
+app.post(
+  "/api/requestPayment",
+  paymentByIpLimiter,
+  paymentByInvoiceLimiter,
+  paymentsGuard,
+);
 app.post("/invoice/create", invoiceCreateLimiter);
 app.post("/dispute/open/:invoice_number", actionLimiter);
 app.post("/api/release-funds", actionLimiter, payoutsGuard);
@@ -398,6 +403,8 @@ app.listen(PORT, async () => {
     );
     logger.info("users.wallet_balance column ready");
   } catch (err) {
-    logger.warn("users.wallet_balance migration failed", { error: err.message });
+    logger.warn("users.wallet_balance migration failed", {
+      error: err.message,
+    });
   }
 });

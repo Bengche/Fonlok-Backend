@@ -27,9 +27,7 @@ export async function getSettings() {
   const now = Date.now();
   if (_cache && now < _cacheExpiry) return _cache;
 
-  const result = await db.query(
-    "SELECT key, value FROM platform_settings",
-  );
+  const result = await db.query("SELECT key, value FROM platform_settings");
 
   const settings = { ...DEFAULTS };
   for (const row of result.rows) {
