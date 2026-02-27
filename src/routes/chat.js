@@ -97,19 +97,6 @@ const upload = multer({
     }
   },
 });
-  fileFilter: (req, file, cb) => {
-    if (CHAT_ALLOWED_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(
-        new multer.MulterError(
-          "LIMIT_UNEXPECTED_FILE",
-          "Only images (JPEG, PNG, WebP, GIF) and PDFs are allowed in chat.",
-        ),
-      );
-    }
-  },
-});
 
 // --- HELPER: Verify that a buyer's token matches the invoice ---
 const verifyBuyerToken = async (invoicenumber, token) => {
