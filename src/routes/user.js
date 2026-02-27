@@ -290,12 +290,12 @@ router.delete(
 
       // 3. Delete the user — rely on ON DELETE CASCADE for related rows.
       //    If your DB doesn't have cascade set up, delete in order below.
-      await db.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
+      await db.query("DELETE FROM notifications WHERE userid = $1", [userId]);
       await db.query(
         "DELETE FROM reviews WHERE reviewer_userid = $1 OR seller_userid = $1",
         [userId],
       );
-      await db.query("DELETE FROM push_subscriptions WHERE user_id = $1", [
+      await db.query("DELETE FROM push_subscriptions WHERE userid = $1", [
         userId,
       ]);
       await db.query("DELETE FROM users WHERE id = $1", [userId]);
