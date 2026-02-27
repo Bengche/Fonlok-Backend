@@ -16,24 +16,18 @@ const router = express.Router();
 import db from "../controllers/db.js";
 import bcrypt from "bcrypt";
 import multer from "multer";
-import fs from "fs";
-import path from "path";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
+import { uploadToCloudinary, deleteFromCloudinary, publicIdFromUrl } from "../utils/cloudinary.js";
 import dotenv from "dotenv";
 dotenv.config();
 
 const saltRounds = 10;
 
-// ── Multer — profile picture uploads ────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "./uploads"),
-  filename: (req, file, cb) =>
-    cb(null, `avatar-${Date.now()}-${file.originalname}`),
-});
+// ── Multer — profile picture uploads (memory storage → Cloudinary) ──────────
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -158,36 +152,41 @@ router.patch(
       return res.status(400).json({ message: "No image file provided." });
     }
 
-    // Store only the filename (same pattern as registration)
-    const newFilename = path.basename(req.file.path);
-
     try {
-      // Fetch the current picture so we can delete the old file after updating
+      // Fetch current picture URL so we can delete the old one from Cloudinary
       const current = await db.query(
         "SELECT profilepicture FROM users WHERE id = $1",
         [userId],
       );
 
+      // Upload new image to Cloudinary
+      const { url: cloudinaryUrl, publicId } = await uploadToCloudinary(
+        req.file.buffer,
+        {
+          folder: "fonlok/avatars",
+          resource_type: "image",
+          // Overwrite keyed by user id so each user has exactly one avatar stored
+          public_id: `user_${userId}`,
+          overwrite: true,
+          invalidate: true,
+        },
+      );
+
+      // Save full Cloudinary URL to DB
       await db.query("UPDATE users SET profilepicture = $1 WHERE id = $2", [
-        newFilename,
+        cloudinaryUrl,
         userId,
       ]);
 
-      // Delete the old profile picture from disk (if it exists and is not the default)
-      const oldFile = current.rows[0]?.profilepicture;
-      if (oldFile) {
-        const oldPath = path.join(process.cwd(), "uploads", oldFile);
-        fs.unlink(oldPath, (err) => {
-          if (err && err.code !== "ENOENT") {
-            console.warn("Could not delete old profile picture:", err.message);
-          }
-        });
+      // Delete old picture from Cloudinary if it was a different Cloudinary asset
+      const oldUrl = current.rows[0]?.profilepicture;
+      const oldPublicId = publicIdFromUrl(oldUrl);
+      if (oldPublicId && oldPublicId !== publicId) {
+        await deleteFromCloudinary(oldPublicId);
       }
 
-      return res.status(200).json({ ok: true, profilepicture: newFilename });
+      return res.status(200).json({ ok: true, profilepicture: cloudinaryUrl });
     } catch (err) {
-      // If DB update failed, clean up the newly uploaded file
-      fs.unlink(req.file.path, () => {});
       console.error(err.message);
       return res
         .status(500)

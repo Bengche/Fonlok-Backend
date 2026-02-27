@@ -3,13 +3,13 @@ const router = express.Router();
 import db from "../controllers/db.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import path from "path";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { notifyUser } from "../middleware/notificationHelper.js";
 import sgMail from "@sendgrid/mail";
 import { emailWrap, emailButton } from "../utils/emailTemplate.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
@@ -69,21 +69,7 @@ async function notifyBuyerByEmail(invoicenumber, chatId) {
   }
 }
 
-// --- MULTER SETUP (handles file uploads, saves to the uploads/ folder) ---
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    // Strip any path separators from the original name to prevent path traversal,
-    // then prefix with a timestamp so filenames are unique and non-guessable.
-    const safeName = path
-      .basename(file.originalname)
-      .replace(/[^a-zA-Z0-9._-]/g, "_");
-    cb(null, `${Date.now()}-${safeName}`);
-  },
-});
-
+// --- MULTER SETUP (memory storage — buffer goes to Cloudinary, not disk) ---
 // Only allow images and PDFs — explicitly block HTML, SVG, JS and any other
 // file type that a browser would execute or render as markup, which would
 // enable stored XSS attacks served from our own domain.
@@ -96,8 +82,21 @@ const CHAT_ALLOWED_TYPES = [
 ];
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max per chat attachment
+  fileFilter: (req, file, cb) => {
+    if (CHAT_ALLOWED_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new multer.MulterError(
+          "LIMIT_UNEXPECTED_FILE",
+          "Only images (JPEG, PNG, WebP, GIF) and PDFs are allowed in chat.",
+        ),
+      );
+    }
+  },
+});
   fileFilter: (req, file, cb) => {
     if (CHAT_ALLOWED_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -309,8 +308,15 @@ router.post(
         }
       }
 
-      // Build the public URL for the uploaded file
-      const fileUrl = `${process.env.BACKEND_URL}/uploads/${req.file.filename}`;
+      // Upload file to Cloudinary
+      // PDFs must use resource_type "raw"; images use "image"
+      const isPdf = req.file.mimetype === "application/pdf";
+      const { url: fileUrl } = await uploadToCloudinary(req.file.buffer, {
+        folder: "fonlok/chat",
+        resource_type: isPdf ? "raw" : "image",
+        // Unique public_id: chat_<chatId>_<timestamp>
+        public_id: `chat_${chat.id}_${Date.now()}`,
+      });
 
       // Save the file message to the database
       const newMessage = await db.query(

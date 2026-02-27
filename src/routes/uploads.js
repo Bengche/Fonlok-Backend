@@ -1,3 +1,15 @@
+/**
+ * uploads.js — LEGACY file-serving route
+ *
+ * New media (profile pictures, chat attachments) is stored on Cloudinary and
+ * served directly via Cloudinary's CDN — this route is no longer called for
+ * new uploads.
+ *
+ * Kept for backward compatibility: file URLs generated before the Cloudinary
+ * migration that still resolve to a local disk path will be served from here.
+ *
+ * Auth: cookie/Bearer JWT (sellers/admins) or ?token=&invoice= (buyers).
+ */
 import express from "express";
 import path from "path";
 import fs from "fs";
