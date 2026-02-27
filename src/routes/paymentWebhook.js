@@ -268,8 +268,8 @@ export async function processSuccessfulPayment(paymentUUID) {
     if (sellerResult.rows.length > 0) {
       const seller = sellerResult.rows[0];
       const sellerDashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
-      const sellerChatLink     = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
-      const sellerFirstName    = (seller.name || "there").split(" ")[0];
+      const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
+      const sellerFirstName = (seller.name || "there").split(" ")[0];
       // Buyer name from guests table (best-effort)
       let buyerName = "the buyer";
       try {
@@ -278,7 +278,9 @@ export async function processSuccessfulPayment(paymentUUID) {
           [invoice_number],
         );
         if (guestName.rows[0]?.name) buyerName = guestName.rows[0].name;
-      } catch (_) { /* non-fatal */ }
+      } catch (_) {
+        /* non-fatal */
+      }
 
       const sellerMsg = {
         to: seller.email,

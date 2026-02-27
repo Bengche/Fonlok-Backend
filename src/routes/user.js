@@ -19,7 +19,11 @@ import multer from "multer";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
-import { uploadToCloudinary, deleteFromCloudinary, publicIdFromUrl } from "../utils/cloudinary.js";
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+  publicIdFromUrl,
+} from "../utils/cloudinary.js";
 import dotenv from "dotenv";
 dotenv.config();
 
