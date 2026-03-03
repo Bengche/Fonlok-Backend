@@ -675,6 +675,223 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
   }
 });
 
+// --- METHOD 3a: MILESTONE RELEASE — Direct JSON API (buyer dashboard UI) ---
+// POST /release-milestone/confirm
+// Body: { invoice_number, buyer_token, milestone_id }
+//
+// Authenticated via the buyer's chat token (same token used in /chat/:invoice).
+// Returns JSON so the buyer can release a milestone directly from the UI
+// without needing to use the email link.
+// MUST be registered before /release-milestone/:token so Express does not
+// treat the literal string "confirm" as a :token parameter.
+
+router.post("/release-milestone/confirm", async (req, res) => {
+  const { invoice_number, buyer_token, milestone_id } = req.body;
+
+  if (!invoice_number || !buyer_token || !milestone_id) {
+    return res.status(400).json({ message: "Missing required fields." });
+  }
+
+  try {
+    // 1. Verify the buyer's chat token against the guests table
+    const guestResult = await db.query(
+      "SELECT * FROM guests WHERE invoicenumber = $1 AND chat_token = $2",
+      [invoice_number, buyer_token],
+    );
+    if (guestResult.rows.length === 0) {
+      return res.status(401).json({ message: "Invalid access token." });
+    }
+
+    // 2. Get the milestone and confirm it belongs to this invoice
+    const msResult = await db.query(
+      "SELECT * FROM invoice_milestones WHERE id = $1 AND invoice_number = $2",
+      [milestone_id, invoice_number],
+    );
+    if (msResult.rows.length === 0) {
+      return res.status(404).json({ message: "Milestone not found." });
+    }
+    const milestone = msResult.rows[0];
+
+    // 3. Status guards — give precise errors before touching the DB lock
+    if (milestone.status === "released") {
+      return res.status(400).json({ message: "This milestone has already been released." });
+    }
+    if (milestone.status !== "completed") {
+      return res.status(400).json({
+        message: "This milestone cannot be released yet. The seller must mark it as complete first.",
+      });
+    }
+
+    // 4. Fetch invoice and seller
+    const invoiceResult = await db.query("SELECT * FROM invoices WHERE id = $1", [milestone.invoice_id]);
+    if (invoiceResult.rows.length === 0) {
+      return res.status(404).json({ message: "Invoice not found." });
+    }
+    const invoice = invoiceResult.rows[0];
+
+    const sellerResult = await db.query("SELECT * FROM users WHERE id = $1", [invoice.userid]);
+    if (sellerResult.rows.length === 0) {
+      return res.status(404).json({ message: "Seller account not found." });
+    }
+    const seller = sellerResult.rows[0];
+
+    // 5. Atomic lock — prevents double-release from concurrent requests
+    const milestoneLock = await db.query(
+      `UPDATE invoice_milestones
+          SET status        = 'released',
+              released_at   = NOW(),
+              release_token = NULL
+        WHERE id     = $1
+          AND status = 'completed'
+        RETURNING id`,
+      [milestone.id],
+    );
+    if (milestoneLock.rows.length === 0) {
+      return res.status(400).json({ message: "This milestone has already been released." });
+    }
+
+    // 6. Fee calculation (identical to email-link route)
+    const milestoneAmount = Number(milestone.amount);
+    const referrerCheckMs = await db.query(
+      "SELECT referred_by FROM users WHERE id = $1",
+      [invoice.userid],
+    );
+    const referrerIdMs = referrerCheckMs.rows[0]?.referred_by ?? null;
+    const hasReferralMs = referrerIdMs !== null;
+
+    const msTotalFee = Math.floor(milestoneAmount * TOTAL_FEE_RATE);
+    const msReferralEarning = hasReferralMs ? Math.floor(milestoneAmount * REFERRAL_FEE_RATE) : 0;
+    const msFonlokNet = msTotalFee - msReferralEarning;
+    const sellerReceives = milestoneAmount - msTotalFee;
+    const fonlokFee = msTotalFee;
+
+    // 7. Campay transfer
+    const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    });
+    await axios.post(
+      `${process.env.CAMPAY_BASE_URL}withdraw/`,
+      {
+        amount: sellerReceives.toString(),
+        currency: "XAF",
+        to: seller.phone,
+        description: `Fonlok milestone payout: ${milestone.label} (Invoice ${invoice.invoicenumber})`,
+        external_reference: `milestone-${milestone.id}`,
+      },
+      { headers: { Authorization: `Token ${auth.data.token}` } },
+    );
+
+    // 8. Record payout
+    await db.query(
+      "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
+      [invoice.userid, sellerReceives, "Mobile Money", "paid", invoice.id, invoice.invoicenumber],
+    );
+
+    // 9. In-app notification to seller
+    notifyUser(
+      invoice.userid,
+      "milestone_released",
+      "Milestone Payout Sent",
+      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: \"${milestone.label}\".`,
+      { milestoneLabel: milestone.label, amount: sellerReceives, invoiceNumber: invoice.invoicenumber },
+    );
+
+    // 10. Referral credit (non-fatal)
+    if (hasReferralMs && msReferralEarning > 0) {
+      try {
+        const msEarningsInsert = await db.query(
+          `INSERT INTO referral_earnings
+             (referrer_userid, referred_userid, invoice_number, invoice_amount, earned_amount)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (invoice_number) DO NOTHING
+           RETURNING id`,
+          [referrerIdMs, invoice.userid, `${invoice.invoicenumber}-ms${milestone.id}`, milestoneAmount, msReferralEarning],
+        );
+        if (msEarningsInsert.rows.length > 0) {
+          await db.query(
+            "UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2",
+            [msReferralEarning, referrerIdMs],
+          );
+          console.log(`✅ Milestone referral: ${msReferralEarning} XAF credited to user ${referrerIdMs}.`);
+        }
+      } catch (referralErr) {
+        console.error("⚠️ Referral credit error (milestone payout succeeded):", referralErr.message);
+      }
+    }
+
+    // 11. Check if ALL milestones for this invoice are now released
+    const remainingResult = await db.query(
+      "SELECT COUNT(*) AS remaining FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released'",
+      [milestone.invoice_id],
+    );
+    const remaining = parseInt(remainingResult.rows[0].remaining);
+    if (remaining === 0) {
+      await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [milestone.invoice_id]);
+      console.log(`✅ All milestones released — invoice ${invoice.invoicenumber} marked completed.`);
+    }
+
+    // 12. Email seller receipt (non-fatal)
+    try {
+      let milestonePdfAttachment = null;
+      try {
+        const pdfBuffer = await generateReceiptPdf(invoice.invoicenumber);
+        milestonePdfAttachment = {
+          content: pdfBuffer.toString("base64"),
+          filename: `fonlok-receipt-${invoice.invoicenumber}.pdf`,
+          type: "application/pdf",
+          disposition: "attachment",
+        };
+      } catch (pdfErr) {
+        console.error("⚠️ Could not generate milestone receipt PDF:", pdfErr.message);
+      }
+      const msFeeLabel = hasReferralMs ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
+      const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
+      const sellerMsg = {
+        to: seller.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: `Milestone Payment Released — ${milestone.label} | Fonlok`,
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
+          <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${invoice.invoicename}</strong> and your payment has been processed.</p>
+          ${emailTable([
+            ["Invoice", invoice.invoicenumber],
+            ["Milestone", milestone.label],
+            ["Gross Amount", `${milestoneAmount} XAF`],
+            [msFeeLabel, `−${fonlokFee} XAF`, "color:#dc2626;"],
+            ["Amount Sent to You", `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            ["Sent To", seller.phone],
+          ])}
+          ${remaining === 0
+            ? '<p style="color:#16a34a;font-weight:600;margin-top:12px;">All milestones have been released. This invoice is now complete.</p>'
+            : `<p style="color:#475569;margin-top:12px;">Remaining milestones: <strong>${remaining}</strong></p>`
+          }
+          ${emailButton(milestoneReceiptLink, "Download PDF Receipt")}`,
+          { footerNote: "Thank you for using Fonlok. This email confirms your milestone payout has been processed." },
+        ),
+        ...(milestonePdfAttachment ? { attachments: [milestonePdfAttachment] } : {}),
+      };
+      await sgMail.send(sellerMsg);
+      console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
+    } catch (emailErr) {
+      console.error("❌ Seller milestone receipt email error:", emailErr.message);
+    }
+
+    return res.status(200).json({
+      message: `Payment released successfully. ${sellerReceives.toLocaleString()} XAF sent to the seller.`,
+      sellerReceives,
+      milestoneLabel: milestone.label,
+      allComplete: remaining === 0,
+      remaining,
+    });
+  } catch (error) {
+    console.error("Milestone direct release failed:", error.message);
+    return res.status(500).json({
+      message: "An error occurred while releasing the payment. Please try again or contact support.",
+    });
+  }
+});
+
 // --- METHOD 3: MILESTONE RELEASE ---
 // GET  → shows the buyer a confirmation page (no money moves).
 // POST → executes the payout atomically after the buyer confirms.

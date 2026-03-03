@@ -159,7 +159,9 @@ router.post(
         (sum, m) => sum + Number(m.amount || 0),
         0,
       );
-      if (totalMilestoneAmount !== Number(amount)) {
+      // Use a tolerance of 1 unit (XAF has no subunits) to guard against
+      // floating-point rounding errors (e.g. 0.1 + 0.2 !== 0.3 in IEEE 754).
+      if (Math.abs(totalMilestoneAmount - Number(amount)) > 0.01) {
         return res.status(400).json({
           message: `Milestone amounts must add up to the full invoice total (${amount} XAF). Current total: ${totalMilestoneAmount} XAF.`,
         });

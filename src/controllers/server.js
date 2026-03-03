@@ -195,6 +195,7 @@ app.post("/invoice/create", invoiceCreateLimiter);
 app.post("/dispute/open/:invoice_number", actionLimiter);
 app.post("/api/release-funds", actionLimiter, payoutsGuard);
 app.get("/api/release-milestone/:token", actionLimiter, payoutsGuard);
+app.post("/api/release-milestone/confirm", actionLimiter, payoutsGuard);
 app.patch("/invoice/milestone/:milestone_id/complete", actionLimiter);
 app.post("/invoice/resend-email/:invoice_number", actionLimiter);
 
