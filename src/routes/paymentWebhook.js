@@ -104,6 +104,7 @@ export async function processSuccessfulPayment(paymentUUID) {
   const invoice = invoiceResult.rows[0];
   const invoice_number = invoice.invoicenumber;
   const idUser = invoice.userid;
+  const isInstallment = invoice.payment_type === "installment";
 
   // 5. Generate unique confirmation code
   let finalCode = "";
@@ -210,16 +211,26 @@ export async function processSuccessfulPayment(paymentUUID) {
         <p style="color:#475569;">Your payment for invoice <strong>${invoice_number}</strong> has been received. Your funds are held securely in escrow and will be released to the seller <strong>one milestone at a time</strong> &mdash; only after you explicitly approve each completed stage of work.</p>
         ${emailTable([
           ["Invoice Number", invoice_number],
-          ["Total in Escrow", `${payment.amount} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+          [
+            "Total in Escrow",
+            `${payment.amount} XAF`,
+            "font-weight:700;color:#16a34a;font-size:15px;",
+          ],
           ["Payment Type", "Milestone Escrow"],
-          ["Status", "&#10003;&nbsp;Funds Held in Escrow", "color:#16a34a;font-weight:600;"],
+          [
+            "Status",
+            "&#10003;&nbsp;Funds Held in Escrow",
+            "color:#16a34a;font-weight:600;",
+          ],
         ])}
         <h3 style="color:#0F1F3D;margin:20px 0 8px;">Your Milestones</h3>
         <p style="color:#475569;margin-bottom:12px;">The seller will work through each milestone. Once a milestone is marked complete, you will receive a <strong>separate email with a secure one-click release link</strong> for that milestone only. No funds are ever moved without your explicit confirmation.</p>
-        ${emailTable(milestonesData.rows.map((m) => [
-          `Milestone ${m.milestone_number}: ${m.label}`,
-          `${Number(m.amount).toLocaleString()} XAF`,
-        ]))}
+        ${emailTable(
+          milestonesData.rows.map((m) => [
+            `Milestone ${m.milestone_number}: ${m.label}`,
+            `${Number(m.amount).toLocaleString()} XAF`,
+          ]),
+        )}
         <p style="color:#475569;margin-top:16px;">Your official payment receipt is attached to this email as a PDF.</p>
         ${emailButton(receiptDownloadLink, "Download PDF Receipt")}
         <h3 style="color:#0F1F3D;margin:20px 0 8px;">How Milestone Releases Work</h3>
