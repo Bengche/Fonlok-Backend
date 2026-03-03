@@ -81,8 +81,12 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (curl, mobile apps, server-to-server)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (curl, mobile apps, server-to-server).
+    // Also allow the literal string "null" origin — modern browsers send Origin: null
+    // when the page is opened from an email-client webview (Gmail, Outlook, etc.),
+    // which is how buyers land on our server-rendered payout confirmation pages.
+    // These pages require a valid single-use token, so allowing null is safe here.
+    if (!origin || origin === "null") return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },

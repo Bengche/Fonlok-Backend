@@ -162,11 +162,15 @@ export async function processSuccessfulPayment(paymentUUID) {
     }
 
     const receiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice_number}`;
-    const buyerMsg = {
-      to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
-      subject: `Payment Confirmed - Invoice ${invoice_number} | Fonlok`,
-      html: emailWrap(
+
+    // Build the confirmation email differently for full-payment vs milestone invoices.
+    let buyerEmailSubject;
+    let buyerEmailHtml;
+
+    if (!isInstallment) {
+      // ── Full-payment invoice: single one-shot release link ────────────────
+      buyerEmailSubject = `Payment Confirmed - Invoice ${invoice_number} | Fonlok`;
+      buyerEmailHtml = emailWrap(
         `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payment Confirmed</h2>
         <p style="color:#475569;">Your payment has been received successfully. Your funds are held securely in escrow and will only be released to the seller once you confirm delivery.</p>
         ${emailTable([
@@ -192,7 +196,52 @@ export async function processSuccessfulPayment(paymentUUID) {
           footerNote:
             "You received this email because a payment was processed on your behalf through Fonlok Escrow. Do not share your confirmation code or link with anyone other than the seller.",
         },
-      ),
+      );
+    } else {
+      // ── Milestone/installment invoice: per-milestone release ──────────────
+      // Fetch the milestone breakdown to include in the email.
+      const milestonesData = await db.query(
+        "SELECT milestone_number, label, amount FROM invoice_milestones WHERE invoice_id = $1 ORDER BY milestone_number ASC",
+        [invoiceId],
+      );
+      buyerEmailSubject = `Payment Confirmed — Milestone Escrow Active | Invoice ${invoice_number} | Fonlok`;
+      buyerEmailHtml = emailWrap(
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payment Confirmed &mdash; Milestone Escrow Active</h2>
+        <p style="color:#475569;">Your payment for invoice <strong>${invoice_number}</strong> has been received. Your funds are held securely in escrow and will be released to the seller <strong>one milestone at a time</strong> &mdash; only after you explicitly approve each completed stage of work.</p>
+        ${emailTable([
+          ["Invoice Number", invoice_number],
+          ["Total in Escrow", `${payment.amount} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+          ["Payment Type", "Milestone Escrow"],
+          ["Status", "&#10003;&nbsp;Funds Held in Escrow", "color:#16a34a;font-weight:600;"],
+        ])}
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">Your Milestones</h3>
+        <p style="color:#475569;margin-bottom:12px;">The seller will work through each milestone. Once a milestone is marked complete, you will receive a <strong>separate email with a secure one-click release link</strong> for that milestone only. No funds are ever moved without your explicit confirmation.</p>
+        ${emailTable(milestonesData.rows.map((m) => [
+          `Milestone ${m.milestone_number}: ${m.label}`,
+          `${Number(m.amount).toLocaleString()} XAF`,
+        ]))}
+        <p style="color:#475569;margin-top:16px;">Your official payment receipt is attached to this email as a PDF.</p>
+        ${emailButton(receiptDownloadLink, "Download PDF Receipt")}
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">How Milestone Releases Work</h3>
+        <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
+          <li>The seller completes a milestone and marks it as done.</li>
+          <li>You receive an email with a secure, one-time release link for that milestone only.</li>
+          <li>Click the link to review and confirm &mdash; funds are never released without your explicit approval.</li>
+          <li>Repeat for each subsequent milestone until the work is fully complete.</li>
+        </ol>
+        <p style="color:#475569;font-size:13px;">If you have concerns about any milestone, do not release payment. Use the secure chat to communicate with the seller, or open a dispute.</p>`,
+        {
+          footerNote:
+            "You received this email because a milestone-based escrow payment was processed on your behalf through Fonlok. Each milestone requires your explicit approval before any funds are released to the seller.",
+        },
+      );
+    }
+
+    const buyerMsg = {
+      to: buyerEmail,
+      from: process.env.VERIFIED_SENDER,
+      subject: buyerEmailSubject,
+      html: buyerEmailHtml,
       ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
     };
     try {
