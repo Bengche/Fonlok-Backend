@@ -704,7 +704,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
 
     // 2. Get the milestone and confirm it belongs to this invoice
     const msResult = await db.query(
-      "SELECT * FROM invoice_milestones WHERE id = $1 AND invoice_number = $2",
+      "SELECT im.* FROM invoice_milestones im JOIN invoices i ON i.id = im.invoice_id WHERE im.id = $1 AND i.invoice_number = $2",
       [milestone_id, invoice_number],
     );
     if (msResult.rows.length === 0) {

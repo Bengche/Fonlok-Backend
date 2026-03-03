@@ -235,10 +235,9 @@ router.post(
           for (let i = 0; i < milestones.length; i++) {
             const m = milestones[i];
             await client.query(
-              "INSERT INTO invoice_milestones (invoice_id, invoice_number, milestone_number, label, amount, deadline) VALUES ($1, $2, $3, $4, $5, $6)",
+              "INSERT INTO invoice_milestones (invoice_id, milestone_number, label, amount, deadline) VALUES ($1, $2, $3, $4, $5)",
               [
                 newInvoice.id,
-                invoiceNumber,
                 i + 1,
                 m.label.trim(),
                 Number(m.amount),
