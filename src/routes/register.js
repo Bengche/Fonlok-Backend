@@ -3,10 +3,9 @@ const router = express.Router();
 import db from "../controllers/db.js";
 import multer from "multer";
 import bcrypt from "bcrypt";
-import fs from "fs";
-import path from "path";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 const saltRounds = 10;
 
 // Generates a short, clean referral code (e.g. "X7K2MN")
@@ -20,14 +19,8 @@ const generateReferralCode = () => {
   return code;
 };
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "./uploads"),
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -132,9 +125,22 @@ router.post(
       country,
       referral_code,
     } = req.body;
-    const profilePicture = req.file?.filename || null;
-
     const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Upload profile picture to Cloudinary (if provided)
+    let profilePicture = null;
+    if (req.file) {
+      try {
+        const { url } = await uploadToCloudinary(req.file.buffer, {
+          folder: "fonlok/avatars",
+          resource_type: "image",
+        });
+        profilePicture = url;
+      } catch (uploadErr) {
+        console.warn("⚠️  Profile picture upload failed during registration:", uploadErr.message);
+        // Non-fatal — account is still created without a picture
+      }
+    }
     const normalizedEmail = email.toLowerCase();
 
     try {
