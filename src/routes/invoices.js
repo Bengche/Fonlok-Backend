@@ -689,8 +689,8 @@ router.patch("/milestone/:milestone_id/complete", async (req, res) => {
 
     // 4. Get buyer email from guests table
     const guestResult = await db.query(
-      "SELECT * FROM guests WHERE invoicenumber = $1",
-      [milestone.invoice_number],
+      "SELECT * FROM guests WHERE invoicenumber = $1 ORDER BY created_at DESC LIMIT 1",
+      [invoice.invoicenumber],
     );
     if (guestResult.rows.length === 0) {
       return res.status(400).json({
