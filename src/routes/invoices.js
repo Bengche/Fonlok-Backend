@@ -202,43 +202,59 @@ router.post(
       const userid = user.id;
       const invoiceLink = `${process.env.FRONTEND_URL}/invoice/${invoiceNumber}`;
 
-      const invoiceResult = await db.query(
-        "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
-        [
-          invoicename,
-          email,
-          currency,
-          amount,
-          invoiceNumber,
-          userid,
-          invoiceLink,
-          description,
-          expires_at || null,
-          isInstallment ? "installment" : "full",
-        ],
-      );
+      // Use a transaction so invoice + milestones are created atomically.
+      // If milestone inserts fail the invoice insert is also rolled back,
+      // preventing phantom invoices that have no milestones attached.
+      const client = await db.connect();
+      let newInvoice;
+      try {
+        await client.query("BEGIN");
 
-      const newInvoice = invoiceResult.rows[0];
+        const invoiceResult = await client.query(
+          "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
+          [
+            invoicename,
+            email,
+            currency,
+            amount,
+            invoiceNumber,
+            userid,
+            invoiceLink,
+            description,
+            expires_at || null,
+            isInstallment ? "installment" : "full",
+          ],
+        );
 
-      // --- Save milestones if installment ---
-      if (isInstallment) {
-        for (let i = 0; i < milestones.length; i++) {
-          const m = milestones[i];
-          await db.query(
-            "INSERT INTO invoice_milestones (invoice_id, invoice_number, milestone_number, label, amount, deadline) VALUES ($1, $2, $3, $4, $5, $6)",
-            [
-              newInvoice.id,
-              invoiceNumber,
-              i + 1,
-              m.label.trim(),
-              Number(m.amount),
-              m.deadline || null,
-            ],
+        newInvoice = invoiceResult.rows[0];
+
+        // --- Save milestones if installment ---
+        if (isInstallment) {
+          for (let i = 0; i < milestones.length; i++) {
+            const m = milestones[i];
+            await client.query(
+              "INSERT INTO invoice_milestones (invoice_id, invoice_number, milestone_number, label, amount, deadline) VALUES ($1, $2, $3, $4, $5, $6)",
+              [
+                newInvoice.id,
+                invoiceNumber,
+                i + 1,
+                m.label.trim(),
+                Number(m.amount),
+                m.deadline || null,
+              ],
+            );
+          }
+          console.log(
+            `✅ ${milestones.length} milestones saved for invoice ${invoiceNumber}`,
           );
         }
-        console.log(
-          `✅ ${milestones.length} milestones saved for invoice ${invoiceNumber}`,
-        );
+
+        await client.query("COMMIT");
+      } catch (txError) {
+        await client.query("ROLLBACK");
+        throw txError; // re-throw so outer catch handles the response
+      } finally {
+        client.release();
       }
 
       return res.status(201).json({ "Invoice Link": invoiceLink });
