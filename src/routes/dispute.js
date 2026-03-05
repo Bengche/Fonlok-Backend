@@ -90,25 +90,71 @@ router.post(
         });
       }
 
-      // 3. If seller is opening, check the 48-hour rule after marking as delivered
+      // 3. If seller is opening, check delivery status and 48-hour rule
       if (opened_by === "seller") {
-        if (invoice.status !== "delivered") {
-          return res.status(403).json({
-            message:
-              "You can only open a dispute after you have marked the invoice as delivered.",
-          });
-        }
+        const isMilestoneInvoice = invoice.payment_type === "installment";
 
-        // Check that at least 48 hours have passed since delivery
-        const deliveredAt = new Date(invoice.delivered_at);
-        const now = new Date();
-        const hoursSinceDelivery = (now - deliveredAt) / (1000 * 60 * 60);
+        if (isMilestoneInvoice) {
+          // Milestone invoice: allow dispute if at least one milestone has been
+          // marked as delivered (status = 'completed') by the seller.
+          const msRes = await db.query(
+            "SELECT * FROM invoice_milestones WHERE invoice_id = $1 ORDER BY milestone_number ASC",
+            [invoice.id],
+          );
+          const completedMs = msRes.rows.filter((m) => m.status === "completed");
 
-        if (hoursSinceDelivery < 48) {
-          const hoursLeft = Math.ceil(48 - hoursSinceDelivery);
-          return res.status(403).json({
-            message: `You can open a dispute ${hoursLeft} hour(s) from now. This gives the buyer fair time to confirm delivery.`,
-          });
+          if (completedMs.length === 0) {
+            return res.status(403).json({
+              message:
+                "You can only open a dispute after you have marked at least one milestone as delivered.",
+            });
+          }
+
+          // 48-hour check: use the specific disputed milestones if provided,
+          // otherwise fall back to all completed milestones (oldest first).
+          let relevantMs = completedMs;
+          if (Array.isArray(milestone_ids) && milestone_ids.length > 0) {
+            const requestedIds = milestone_ids.map((id) => parseInt(id, 10));
+            const targeted = completedMs.filter((m) => requestedIds.includes(m.id));
+            if (targeted.length > 0) relevantMs = targeted;
+          }
+
+          // Find the milestone that has been waiting the longest
+          const oldestCompleted = relevantMs.reduce((oldest, m) => {
+            if (!oldest) return m;
+            return new Date(m.completed_at) < new Date(oldest.completed_at) ? m : oldest;
+          }, null);
+
+          if (oldestCompleted && oldestCompleted.completed_at) {
+            const completedAt = new Date(oldestCompleted.completed_at);
+            const hoursSince = (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
+            if (hoursSince < 48) {
+              const hoursLeft = Math.ceil(48 - hoursSince);
+              return res.status(403).json({
+                message: `You can open a dispute ${hoursLeft} hour(s) from now. This gives the buyer fair time to confirm the milestone.`,
+              });
+            }
+          }
+        } else {
+          // Regular (non-milestone) invoice: must be marked as delivered first
+          if (invoice.status !== "delivered") {
+            return res.status(403).json({
+              message:
+                "You can only open a dispute after you have marked the invoice as delivered.",
+            });
+          }
+
+          // Check that at least 48 hours have passed since delivery
+          const deliveredAt = new Date(invoice.delivered_at);
+          const now = new Date();
+          const hoursSinceDelivery = (now - deliveredAt) / (1000 * 60 * 60);
+
+          if (hoursSinceDelivery < 48) {
+            const hoursLeft = Math.ceil(48 - hoursSinceDelivery);
+            return res.status(403).json({
+              message: `You can open a dispute ${hoursLeft} hour(s) from now. This gives the buyer fair time to confirm delivery.`,
+            });
+          }
         }
       }
 
@@ -181,10 +227,17 @@ router.post(
           }
           finalScope = "full";
           finalMilestoneIds = unreleasedMs.map((m) => m.id);
-          disputedAmount = unreleasedMs.reduce((s, m) => s + Number(m.amount), 0);
+          disputedAmount = unreleasedMs.reduce(
+            (s, m) => s + Number(m.amount),
+            0,
+          );
         } else {
           // scope === 'milestone'
-          if (!milestone_ids || !Array.isArray(milestone_ids) || milestone_ids.length === 0) {
+          if (
+            !milestone_ids ||
+            !Array.isArray(milestone_ids) ||
+            milestone_ids.length === 0
+          ) {
             return res.status(400).json({
               message: "Please select at least one milestone to dispute.",
             });
@@ -210,7 +263,9 @@ router.post(
           }
           finalScope = "milestone";
           finalMilestoneIds = requestedIds;
-          const selectedMs = milestones.filter((m) => requestedIds.includes(m.id));
+          const selectedMs = milestones.filter((m) =>
+            requestedIds.includes(m.id),
+          );
           disputedAmount = selectedMs.reduce((s, m) => s + Number(m.amount), 0);
         }
       }
@@ -221,7 +276,16 @@ router.post(
       // 8. Save the dispute to the database (with scope metadata)
       await db.query(
         "INSERT INTO disputes (invoiceid, invoicenumber, opened_by, reason, admin_token, dispute_scope, disputed_milestone_ids, disputed_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        [invoice.id, invoicenumber, opened_by, reason, adminToken, finalScope, finalMilestoneIds, disputedAmount],
+        [
+          invoice.id,
+          invoicenumber,
+          opened_by,
+          reason,
+          adminToken,
+          finalScope,
+          finalMilestoneIds,
+          disputedAmount,
+        ],
       );
 
       // 9. Add a system message to the chat so both parties can see the dispute was opened
@@ -260,7 +324,12 @@ router.post(
               `${disputedAmount.toLocaleString()} ${invoice.currency}`,
               "font-weight:700;font-size:15px;",
             ],
-            ["Dispute Scope", isMilestoneInvoice ? `${finalScope} (${finalMilestoneIds.length} milestone(s))` : "Full invoice"],
+            [
+              "Dispute Scope",
+              isMilestoneInvoice
+                ? `${finalScope} (${finalMilestoneIds.length} milestone(s))`
+                : "Full invoice",
+            ],
             ["Opened By", opened_by],
             ["Reason", reason],
           ])}
@@ -490,7 +559,9 @@ router.get("/admin/:admin_token", async (req, res) => {
       milestones = msRes.rows;
       const disputedIds = dispute.disputed_milestone_ids || [];
       if (disputedIds.length > 0) {
-        disputedMilestones = milestones.filter((m) => disputedIds.includes(m.id));
+        disputedMilestones = milestones.filter((m) =>
+          disputedIds.includes(m.id),
+        );
       } else {
         disputedMilestones = milestones.filter((m) => m.status !== "released");
       }
@@ -621,7 +692,10 @@ router.post(
 
       const dispute = disputeResult.rows[0];
 
-      if (dispute.status !== "open" && !dispute.status.startsWith("partially_resolved")) {
+      if (
+        dispute.status !== "open" &&
+        !dispute.status.startsWith("partially_resolved")
+      ) {
         return res
           .status(400)
           .json({ message: "This dispute has already been fully resolved." });
@@ -656,11 +730,17 @@ router.post(
         const allCurrentMilestones = currentMsResult.rows;
 
         let targetIds = [];
-        if (requestedMilestoneIds && Array.isArray(requestedMilestoneIds) && requestedMilestoneIds.length > 0) {
+        if (
+          requestedMilestoneIds &&
+          Array.isArray(requestedMilestoneIds) &&
+          requestedMilestoneIds.length > 0
+        ) {
           targetIds = requestedMilestoneIds.map((id) => parseInt(id, 10));
           const disputedIds = dispute.disputed_milestone_ids || [];
           if (disputedIds.length > 0) {
-            const outOfScope = targetIds.filter((id) => !disputedIds.includes(id));
+            const outOfScope = targetIds.filter(
+              (id) => !disputedIds.includes(id),
+            );
             if (outOfScope.length > 0) {
               return res.status(400).json({
                 message: `Milestone ID(s) [${outOfScope.join(", ")}] are not within the scope of this dispute.`,
@@ -669,7 +749,10 @@ router.post(
           }
         } else {
           const disputedIds = dispute.disputed_milestone_ids || [];
-          targetIds = disputedIds.length > 0 ? disputedIds : allCurrentMilestones.map((m) => m.id);
+          targetIds =
+            disputedIds.length > 0
+              ? disputedIds
+              : allCurrentMilestones.map((m) => m.id);
         }
 
         const alreadyReleased = allCurrentMilestones.filter(
@@ -694,7 +777,10 @@ router.post(
           });
         }
 
-        effectiveAmount = eligibleMilestones.reduce((sum, m) => sum + Number(m.amount), 0);
+        effectiveAmount = eligibleMilestones.reduce(
+          (sum, m) => sum + Number(m.amount),
+          0,
+        );
         console.log(
           `Dispute resolve ${invoice.invoicenumber}: decision=${decision}, ` +
             `eligible=[${eligibleMilestones.map((m) => m.id)}], effectiveAmount=${effectiveAmount} XAF`,
@@ -740,13 +826,18 @@ router.post(
           `SELECT id FROM invoice_milestones WHERE id = ANY($1::int[]) AND status != 'released'`,
           [disputedIds],
         );
-        return remaining.rows.length > 0 ? `partially_${baseStatus}` : baseStatus;
+        return remaining.rows.length > 0
+          ? `partially_${baseStatus}`
+          : baseStatus;
       };
 
       if (decision === "seller") {
         // ── DECISION: Release funds to the seller ──────────────────────────
         const sellerShare = effectiveAmount - totalFeeD;
-        const sellerResult = await db.query("SELECT * FROM users WHERE id = $1", [invoice.userid]);
+        const sellerResult = await db.query(
+          "SELECT * FROM users WHERE id = $1",
+          [invoice.userid],
+        );
         const seller = sellerResult.rows[0];
 
         console.log(
@@ -781,7 +872,14 @@ router.post(
 
         await db.query(
           "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1,$2,$3,$4,$5,$6)",
-          [invoice.userid, sellerShare, "Mobile Money", "paid", invoice.id, invoice.invoicenumber],
+          [
+            invoice.userid,
+            sellerShare,
+            "Mobile Money",
+            "paid",
+            invoice.id,
+            invoice.invoicenumber,
+          ],
         );
 
         if (hasReferralD && referralEarningD > 0) {
@@ -792,12 +890,23 @@ router.post(
                VALUES ($1,$2,$3,$4,$5)
                ON CONFLICT (invoice_number) DO NOTHING
                RETURNING id`,
-              [referrerIdD, invoice.userid, `${invoice.invoicenumber}-dispute-s`, effectiveAmount, referralEarningD],
+              [
+                referrerIdD,
+                invoice.userid,
+                `${invoice.invoicenumber}-dispute-s`,
+                effectiveAmount,
+                referralEarningD,
+              ],
             );
             if (ins.rows.length > 0) {
-              await db.query("UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2", [referralEarningD, referrerIdD]);
+              await db.query(
+                "UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2",
+                [referralEarningD, referrerIdD],
+              );
             }
-          } catch (e) { console.error("⚠️ Dispute referral credit error:", e.message); }
+          } catch (e) {
+            console.error("⚠️ Dispute referral credit error:", e.message);
+          }
         }
 
         if (isMilestoneInvoiceR) {
@@ -806,21 +915,32 @@ router.post(
             [invoice.id],
           );
           if (parseInt(totalRem.rows[0].cnt) === 0) {
-            await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [invoice.id]);
+            await db.query(
+              "UPDATE invoices SET status = 'completed' WHERE id = $1",
+              [invoice.id],
+            );
           }
         } else {
-          await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [invoice.id]);
+          await db.query(
+            "UPDATE invoices SET status = 'completed' WHERE id = $1",
+            [invoice.id],
+          );
         }
 
         const finalStatus = await computeDisputeStatus("resolved_seller");
-        await db.query("UPDATE disputes SET status = $1 WHERE admin_token = $2", [finalStatus, admin_token]);
+        await db.query(
+          "UPDATE disputes SET status = $1 WHERE admin_token = $2",
+          [finalStatus, admin_token],
+        );
 
         if (chatResult.rows.length > 0) {
           const isFinal = !finalStatus.startsWith("partially");
           await db.query(
             "INSERT INTO messages (chat_id, sender_type, sender_email, message) VALUES ($1,$2,$3,$4)",
             [
-              chatResult.rows[0].id, "system", "system",
+              chatResult.rows[0].id,
+              "system",
+              "system",
               isFinal
                 ? `✅ Dispute resolved by admin. ${sellerShare.toLocaleString()} XAF released to the seller.`
                 : `⚠️ Admin resolved ${eligibleMilestones.length} milestone(s). ${sellerShare.toLocaleString()} XAF released to the seller. Dispute remains open for remaining milestones.`,
@@ -830,7 +950,8 @@ router.post(
 
         try {
           await sgMail.send({
-            to: seller.email, from: process.env.VERIFIED_SENDER,
+            to: seller.email,
+            from: process.env.VERIFIED_SENDER,
             subject: `Dispute Resolved: Funds Released to You — Invoice ${invoice.invoicenumber} | Fonlok`,
             html: emailWrap(
               `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved — Funds Released to You</h2>
@@ -838,20 +959,36 @@ router.post(
               ${emailTable([
                 ["Invoice", invoice.invoicenumber],
                 ["Effective Amount", `${effectiveAmount.toLocaleString()} XAF`],
-                ["Fonlok Fee (2%)", `−${totalFeeD.toLocaleString()} XAF`, "color:#dc2626;"],
-                ["Amount Sent", `${sellerShare.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                [
+                  "Fonlok Fee (2%)",
+                  `−${totalFeeD.toLocaleString()} XAF`,
+                  "color:#dc2626;",
+                ],
+                [
+                  "Amount Sent",
+                  `${sellerShare.toLocaleString()} XAF`,
+                  "font-weight:700;color:#16a34a;font-size:15px;",
+                ],
                 ["Sent To", seller.phone],
               ])}`,
-              { footerNote: "Fonlok Escrow — dispute resolved in your favour." },
+              {
+                footerNote: "Fonlok Escrow — dispute resolved in your favour.",
+              },
             ),
           });
-        } catch (e) { console.error("Seller dispute email error:", e.message); }
+        } catch (e) {
+          console.error("Seller dispute email error:", e.message);
+        }
 
         try {
-          const gR = await db.query("SELECT * FROM guests WHERE invoicenumber = $1", [invoice.invoicenumber]);
+          const gR = await db.query(
+            "SELECT * FROM guests WHERE invoicenumber = $1",
+            [invoice.invoicenumber],
+          );
           if (gR.rows.length > 0) {
             await sgMail.send({
-              to: gR.rows[0].email, from: process.env.VERIFIED_SENDER,
+              to: gR.rows[0].email,
+              from: process.env.VERIFIED_SENDER,
               subject: `Dispute Update — Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved</h2>
@@ -861,7 +998,9 @@ router.post(
               ),
             });
           }
-        } catch (e) { console.error("Buyer dispute email error:", e.message); }
+        } catch (e) {
+          console.error("Buyer dispute email error:", e.message);
+        }
 
         return res.status(200).json({
           message: `Dispute resolved. ${sellerShare.toLocaleString()} XAF released to the seller.`,
@@ -869,17 +1008,20 @@ router.post(
           effectiveAmount,
           status: finalStatus,
         });
-
       } else if (decision === "buyer") {
         // ── DECISION: Refund the buyer ────────────────────────────────────
         const refundAmount = effectiveAmount - totalFeeD;
 
-        const guestResult = await db.query("SELECT * FROM guests WHERE invoicenumber = $1", [invoice.invoicenumber]);
+        const guestResult = await db.query(
+          "SELECT * FROM guests WHERE invoicenumber = $1",
+          [invoice.invoicenumber],
+        );
         const buyer = guestResult.rows[0] ?? null;
 
         if (!buyer?.momo_number) {
           return res.status(400).json({
-            message: "Cannot process refund: no buyer MoMo number found. Please process manually.",
+            message:
+              "Cannot process refund: no buyer MoMo number found. Please process manually.",
           });
         }
 
@@ -914,7 +1056,14 @@ router.post(
 
         await db.query(
           "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1,$2,$3,$4,$5,$6)",
-          [invoice.userid, refundAmount, "Refund to Buyer", "refunded", invoice.id, invoice.invoicenumber],
+          [
+            invoice.userid,
+            refundAmount,
+            "Refund to Buyer",
+            "refunded",
+            invoice.id,
+            invoice.invoicenumber,
+          ],
         );
 
         if (isMilestoneInvoiceR) {
@@ -923,21 +1072,32 @@ router.post(
             [invoice.id],
           );
           if (parseInt(totalRemB.rows[0].cnt) === 0) {
-            await db.query("UPDATE invoices SET status = 'refunded' WHERE id = $1", [invoice.id]);
+            await db.query(
+              "UPDATE invoices SET status = 'refunded' WHERE id = $1",
+              [invoice.id],
+            );
           }
         } else {
-          await db.query("UPDATE invoices SET status = 'refunded' WHERE id = $1", [invoice.id]);
+          await db.query(
+            "UPDATE invoices SET status = 'refunded' WHERE id = $1",
+            [invoice.id],
+          );
         }
 
         const finalStatusB = await computeDisputeStatus("resolved_buyer");
-        await db.query("UPDATE disputes SET status = $1 WHERE admin_token = $2", [finalStatusB, admin_token]);
+        await db.query(
+          "UPDATE disputes SET status = $1 WHERE admin_token = $2",
+          [finalStatusB, admin_token],
+        );
 
         if (chatResult.rows.length > 0) {
           const isFinalB = !finalStatusB.startsWith("partially");
           await db.query(
             "INSERT INTO messages (chat_id, sender_type, sender_email, message) VALUES ($1,$2,$3,$4)",
             [
-              chatResult.rows[0].id, "system", "system",
+              chatResult.rows[0].id,
+              "system",
+              "system",
               isFinalB
                 ? `✅ Dispute resolved by admin. Refund of ${refundAmount.toLocaleString()} XAF sent to the buyer.`
                 : `⚠️ Admin refunded ${eligibleMilestones.length} milestone(s). ${refundAmount.toLocaleString()} XAF sent to buyer. Dispute remains open for remaining milestones.`,
@@ -948,39 +1108,60 @@ router.post(
         try {
           if (buyer.email) {
             await sgMail.send({
-              to: buyer.email, from: process.env.VERIFIED_SENDER,
+              to: buyer.email,
+              from: process.env.VERIFIED_SENDER,
               subject: `Refund Processed — Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Processed — Funds Sent to You</h2>
                 <p style="color:#475569;">The admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and processed your refund.</p>
                 ${emailTable([
                   ["Invoice", invoice.invoicenumber],
-                  ["Gross Disputed Amount", `${effectiveAmount.toLocaleString()} XAF`],
-                  ["Fonlok Fee (2%)", `−${totalFeeD.toLocaleString()} XAF`, "color:#dc2626;"],
-                  ["Refund Sent to You", `${refundAmount.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                  [
+                    "Gross Disputed Amount",
+                    `${effectiveAmount.toLocaleString()} XAF`,
+                  ],
+                  [
+                    "Fonlok Fee (2%)",
+                    `−${totalFeeD.toLocaleString()} XAF`,
+                    "color:#dc2626;",
+                  ],
+                  [
+                    "Refund Sent to You",
+                    `${refundAmount.toLocaleString()} XAF`,
+                    "font-weight:700;color:#16a34a;font-size:15px;",
+                  ],
                   ["Sent To", buyer.momo_number],
                 ])}`,
                 { footerNote: "Fonlok Escrow dispute refund confirmation." },
               ),
             });
           }
-        } catch (e) { console.error("Buyer refund email error:", e.message); }
+        } catch (e) {
+          console.error("Buyer refund email error:", e.message);
+        }
 
         try {
-          const sR = await db.query("SELECT * FROM users WHERE id = $1", [invoice.userid]);
+          const sR = await db.query("SELECT * FROM users WHERE id = $1", [
+            invoice.userid,
+          ]);
           if (sR.rows.length > 0) {
             await sgMail.send({
-              to: sR.rows[0].email, from: process.env.VERIFIED_SENDER,
+              to: sR.rows[0].email,
+              from: process.env.VERIFIED_SENDER,
               subject: `Dispute Resolved: Refund Issued to Buyer — Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved — Refund Issued to Buyer</h2>
                 <p style="color:#475569;">Hello ${sR.rows[0].name}, the admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and issued a refund to the buyer.</p>
                 <p style="color:#475569;">If you believe this was unfair, contact <a href="mailto:support@fonlok.com" style="color:#F59E0B;">support@fonlok.com</a>.</p>`,
-                { footerNote: "Fonlok Escrow dispute resolution notification." },
+                {
+                  footerNote: "Fonlok Escrow dispute resolution notification.",
+                },
               ),
             });
           }
-        } catch (e) { console.error("Seller refund email error:", e.message); }
+        } catch (e) {
+          console.error("Seller refund email error:", e.message);
+        }
 
         return res.status(200).json({
           message: `Dispute resolved. Refund of ${refundAmount.toLocaleString()} XAF sent to the buyer.`,
@@ -988,7 +1169,6 @@ router.post(
           effectiveAmount,
           status: finalStatusB,
         });
-
       } else {
         return res
           .status(400)
