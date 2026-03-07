@@ -353,6 +353,25 @@ app.listen(PORT, async () => {
     logger.warn("payout_reference migration failed", { error: err.message });
   }
 
+  // Add milestone-aware dispute columns — required by the dispute flow.
+  // dispute_scope, disputed_milestone_ids, disputed_amount on disputes table;
+  // dispute_resolution on invoice_milestones. All safe to run on every boot.
+  try {
+    await db.query(`
+      ALTER TABLE disputes
+        ADD COLUMN IF NOT EXISTS dispute_scope          VARCHAR(20) DEFAULT 'full',
+        ADD COLUMN IF NOT EXISTS disputed_milestone_ids INTEGER[]   DEFAULT '{}',
+        ADD COLUMN IF NOT EXISTS disputed_amount        NUMERIC     DEFAULT NULL
+    `);
+    await db.query(`
+      ALTER TABLE invoice_milestones
+        ADD COLUMN IF NOT EXISTS dispute_resolution VARCHAR(20) DEFAULT NULL
+    `);
+    logger.info("dispute milestone columns ready");
+  } catch (err) {
+    logger.warn("dispute milestone migration failed", { error: err.message });
+  }
+
   // Create processed_payments table for atomic webhook idempotency.
   // The PRIMARY KEY on payment_uuid ensures only one INSERT per UUID can
   // ever succeed, eliminating the TOCTOU race in concurrent webhook retries.
