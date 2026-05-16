@@ -483,7 +483,8 @@ router.get("/link/:id", async (req, res) => {
   try {
     const result = await db.query(
       `SELECT i.*, u.name AS seller_name, u.username AS seller_username,
-              u.profilepicture AS seller_profilepicture, u.phone AS seller_phone
+              u.profilepicture AS seller_profilepicture, u.phone AS seller_phone,
+              u.kyc_status AS seller_kyc_status
          FROM invoices i
          LEFT JOIN users u ON u.id = i.userid
         WHERE i.invoicenumber = $1`,
