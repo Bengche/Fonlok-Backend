@@ -23,6 +23,7 @@ import notifications from "../routes/notifications.js";
 import user from "../routes/user.js";
 import aiChat from "../routes/aiChat.js";
 import uploads from "../routes/uploads.js";
+import passkey from "../routes/passkey.js";
 import { startScheduledJobs } from "../jobs/scheduledJobs.js";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -235,6 +236,7 @@ app.use("/admin", admin);
 app.use("/notifications", notifications);
 app.use("/user", user);
 app.use("/api", aiChat);
+app.use("/passkey", passkey);
 
 // Serve uploaded files — authenticated only (prevents unauthenticated enumeration)
 app.use("/uploads", uploads);
