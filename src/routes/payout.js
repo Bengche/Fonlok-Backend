@@ -38,12 +38,22 @@ const TOTAL_FEE_RATE = 0.02; // 2.0% &mdash; always deducted from seller payout
 // facing confirmation and status screens (fund release, error pages, etc.).
 // type: "success" | "error" | "warning" | "info"
 // ─────────────────────────────────────────────────────────────────────────────
-function renderPage({ type = "info", title, body, ctaHref, ctaLabel, formAction, formLabel, warningBox, note } = {}) {
+function renderPage({
+  type = "info",
+  title,
+  body,
+  ctaHref,
+  ctaLabel,
+  formAction,
+  formLabel,
+  warningBox,
+  note,
+} = {}) {
   const palette = {
     success: { accent: "#16a34a", bg: "#f0fdf4", icon: "✓" },
-    error:   { accent: "#dc2626", bg: "#fef2f2", icon: "✗" },
+    error: { accent: "#dc2626", bg: "#fef2f2", icon: "✗" },
     warning: { accent: "#d97706", bg: "#fffbeb", icon: "⚠" },
-    info:    { accent: "#0F1F3D", bg: "#f8fafc", icon: "i" },
+    info: { accent: "#0F1F3D", bg: "#f8fafc", icon: "i" },
   };
   const { accent, bg, icon } = palette[type] ?? palette.info;
   const warnHtml = warningBox
@@ -622,48 +632,53 @@ router.get("/verify-payout/:token/:id", async (req, res) => {
       [token],
     );
     if (user.rows.length === 0) {
-      return res
-        .status(404)
-        .send(renderPage({
+      return res.status(404).send(
+        renderPage({
           type: "error",
           title: "Invalid Link",
           body: "This confirmation link does not exist or has already been used.",
           note: "If you believe this is an error, please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }));
+        }),
+      );
     }
 
     const users = user.rows[0];
     const is_used = users.is_used;
 
     if (is_used) {
-      return res
-        .status(400)
-        .send(renderPage({
+      return res.status(400).send(
+        renderPage({
           type: "warning",
           title: "Link Already Used",
           body: "These funds have already been released. Each confirmation link can only be used once.",
           note: "If you have any questions, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }));
+        }),
+      );
     }
 
     // Token is valid — show the confirmation page instead of executing immediately
-    res.send(renderPage({
-      type: "warning",
-      title: "Release Funds to Seller?",
-      body: "You are about to release the escrowed funds to the seller for this invoice.",
-      warningBox: "<strong>This action cannot be undone.</strong><br>Only confirm if you have received your order and are fully satisfied. If there is an issue, contact the seller before proceeding.",
-      formAction: `/api/verify-payout/${token}/${id}`,
-      formLabel: "✓ Yes, Release Funds to Seller",
-      note: "If you have not received your order or are not satisfied, do <strong>not</strong> click the button above.",
-    }));
+    res.send(
+      renderPage({
+        type: "warning",
+        title: "Release Funds to Seller?",
+        body: "You are about to release the escrowed funds to the seller for this invoice.",
+        warningBox:
+          "<strong>This action cannot be undone.</strong><br>Only confirm if you have received your order and are fully satisfied. If there is an issue, contact the seller before proceeding.",
+        formAction: `/api/verify-payout/${token}/${id}`,
+        formLabel: "✓ Yes, Release Funds to Seller",
+        note: "If you have not received your order or are not satisfied, do <strong>not</strong> click the button above.",
+      }),
+    );
   } catch (error) {
     console.error("Confirmation Page Error:", error.message);
-    res.status(500).send(renderPage({
-      type: "error",
-      title: "Something Went Wrong",
-      body: "An unexpected error occurred. Please try again or contact support.",
-      note: "Email us at <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-    }));
+    res.status(500).send(
+      renderPage({
+        type: "error",
+        title: "Something Went Wrong",
+        body: "An unexpected error occurred. Please try again or contact support.",
+        note: "Email us at <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
+      }),
+    );
   }
 });
 
@@ -678,14 +693,14 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       [token],
     );
     if (user.rows.length === 0) {
-      return res
-        .status(404)
-        .send(renderPage({
+      return res.status(404).send(
+        renderPage({
           type: "error",
           title: "Invalid Link",
           body: "This confirmation link does not exist or has already been used.",
           note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }));
+        }),
+      );
     }
 
     const users = user.rows[0];
@@ -694,26 +709,26 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
     const userInvoiceId = users.code_id;
 
     if (is_used) {
-      return res
-        .status(400)
-        .send(renderPage({
+      return res.status(400).send(
+        renderPage({
           type: "warning",
           title: "Link Already Used",
           body: "These funds have already been released. Each confirmation link can only be used once.",
           note: "If you have any questions, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }));
+        }),
+      );
     }
 
     // ── Security: verify the URL :id param matches the token's invoice ────
     if (String(userInvoiceId) !== String(id)) {
-      return res
-        .status(400)
-        .send(renderPage({
+      return res.status(400).send(
+        renderPage({
           type: "error",
           title: "Invalid Request",
           body: "The link parameters do not match. This link may have been tampered with.",
           note: "If you received this link by email from Fonlok and believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }));
+        }),
+      );
     }
 
     // Re-verify that the payment is actually paid before releasing
@@ -722,33 +737,37 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       [userInvoiceId],
     );
     if (!paymentCheck.rows[0] || paymentCheck.rows[0].status !== "paid") {
-      return res
-        .status(400)
-        .send(renderPage({
+      return res.status(400).send(
+        renderPage({
           type: "warning",
           title: "Payment Not Yet Confirmed",
           body: "The buyer\u2019s payment has not been confirmed yet. Funds can only be released once the payment clears.",
           note: "Please check back shortly, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> if this persists.",
-        }));
+        }),
+      );
     }
 
     // Execute the payout — pass the invoice id from the token (authoritative)
     await executePayoutLink(userInvoiceId);
 
-    res.send(renderPage({
-      type: "success",
-      title: "Funds Released",
-      body: "You have successfully released the escrowed funds to the seller. The seller will receive a notification and payment confirmation by email.",
-      note: "Thank you for using Fonlok. You can close this page.",
-    }));
+    res.send(
+      renderPage({
+        type: "success",
+        title: "Funds Released",
+        body: "You have successfully released the escrowed funds to the seller. The seller will receive a notification and payment confirmation by email.",
+        note: "Thank you for using Fonlok. You can close this page.",
+      }),
+    );
   } catch (error) {
     console.error("Link Payout Failed:", error.message);
-    res.status(500).send(renderPage({
-      type: "error",
-      title: "Something Went Wrong",
-      body: "An unexpected error occurred while processing the fund release. No money has been moved.",
-      note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-    }));
+    res.status(500).send(
+      renderPage({
+        type: "error",
+        title: "Something Went Wrong",
+        body: "An unexpected error occurred while processing the fund release. No money has been moved.",
+        note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
+      }),
+    );
   }
 });
 
@@ -1066,11 +1085,9 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
 
     // 3. Prevent the seller from releasing their own funds
     if (invoice.userid === buyerUserId) {
-      return res
-        .status(403)
-        .json({
-          message: "Sellers cannot release their own milestone payments.",
-        });
+      return res.status(403).json({
+        message: "Sellers cannot release their own milestone payments.",
+      });
     }
 
     // 4. Verify the requester actually paid for this invoice
@@ -1079,11 +1096,9 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       [invoice.invoicenumber, buyerUserId],
     );
     if (guestResult.rows.length === 0) {
-      return res
-        .status(403)
-        .json({
-          message: "You are not authorised to release funds for this invoice.",
-        });
+      return res.status(403).json({
+        message: "You are not authorised to release funds for this invoice.",
+      });
     }
 
     // 5. Status guards
@@ -1319,49 +1334,60 @@ router.get("/release-milestone/:token", async (req, res) => {
       [token],
     );
     if (msResult.rows.length === 0) {
-      return res.status(404).send(renderPage({
-        type: "error",
-        title: "Invalid Link",
-        body: "This milestone release link is invalid or has already been used.",
-        note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-      }));
+      return res.status(404).send(
+        renderPage({
+          type: "error",
+          title: "Invalid Link",
+          body: "This milestone release link is invalid or has already been used.",
+          note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
+        }),
+      );
     }
     const milestone = msResult.rows[0];
     if (milestone.status === "released") {
-      return res.status(400).send(renderPage({
-        type: "success",
-        title: "Already Released",
-        body: "This milestone has already been paid out to the seller.",
-        note: "No further action is required. Thank you for using Fonlok.",
-      }));
+      return res.status(400).send(
+        renderPage({
+          type: "success",
+          title: "Already Released",
+          body: "This milestone has already been paid out to the seller.",
+          note: "No further action is required. Thank you for using Fonlok.",
+        }),
+      );
     }
     if (milestone.status !== "completed") {
-      return res.status(400).send(renderPage({
-        type: "warning",
-        title: "Milestone Not Yet Complete",
-        body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
-        note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-      }));
+      return res.status(400).send(
+        renderPage({
+          type: "warning",
+          title: "Milestone Not Yet Complete",
+          body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
+          note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
+        }),
+      );
     }
 
     // Show confirmation page — payout only fires on POST
-    res.send(renderPage({
-      type: "warning",
-      title: `Release Payment for \u201c${milestone.label}\u201d?`,
-      body: `You are about to release the escrowed payment for milestone: <strong>${milestone.label}</strong>.`,
-      warningBox: "<strong>This action cannot be undone.</strong><br>Only confirm if the seller has completed this milestone to your full satisfaction. If there is any issue, contact the seller first.",
-      formAction: `/api/release-milestone/${token}`,
-      formLabel: "\u2713 Yes, Release Payment to Seller",
-      note: "If the milestone is not yet complete, do <strong>not</strong> click the button above.",
-    }));
+    res.send(
+      renderPage({
+        type: "warning",
+        title: `Release Payment for \u201c${milestone.label}\u201d?`,
+        body: `You are about to release the escrowed payment for milestone: <strong>${milestone.label}</strong>.`,
+        warningBox:
+          "<strong>This action cannot be undone.</strong><br>Only confirm if the seller has completed this milestone to your full satisfaction. If there is any issue, contact the seller first.",
+        formAction: `/api/release-milestone/${token}`,
+        formLabel: "\u2713 Yes, Release Payment to Seller",
+        note: "If the milestone is not yet complete, do <strong>not</strong> click the button above.",
+      }),
+    );
   } catch (error) {
     console.error("Milestone confirmation page error:", error.message);
-    res.status(500).send(renderPage({
-      type: "error",
-      title: "Something Went Wrong",
-      body: "An unexpected error occurred. Please try again or contact support.",
-      note: "Email us at <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-    }));
+    res.status(500).send(
+      renderPage({
+        type: "error",
+        title: "Something Went Wrong",
+        body: "An unexpected error occurred. Please try again or contact support.",
+        note: "Email us at <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
+      }),
+    );
   }
 });
 
@@ -1375,32 +1401,38 @@ router.post("/release-milestone/:token", async (req, res) => {
       [token],
     );
     if (msResult.rows.length === 0) {
-      return res.status(404).send(renderPage({
-        type: "error",
-        title: "Invalid Link",
-        body: "This milestone release link is invalid or has already been used.",
-        note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-      }));
+      return res.status(404).send(
+        renderPage({
+          type: "error",
+          title: "Invalid Link",
+          body: "This milestone release link is invalid or has already been used.",
+          note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
+        }),
+      );
     }
 
     const milestone = msResult.rows[0];
 
     // 2. Guard checks — give precise error messages before the atomic lock
     if (milestone.status === "released") {
-      return res.status(400).send(renderPage({
-        type: "success",
-        title: "Already Released",
-        body: "This milestone has already been paid out to the seller.",
-        note: "No further action is required. Thank you for using Fonlok.",
-      }));
+      return res.status(400).send(
+        renderPage({
+          type: "success",
+          title: "Already Released",
+          body: "This milestone has already been paid out to the seller.",
+          note: "No further action is required. Thank you for using Fonlok.",
+        }),
+      );
     }
     if (milestone.status !== "completed") {
-      return res.status(400).send(renderPage({
-        type: "warning",
-        title: "Milestone Not Yet Complete",
-        body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
-        note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-      }));
+      return res.status(400).send(
+        renderPage({
+          type: "warning",
+          title: "Milestone Not Yet Complete",
+          body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
+          note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
+        }),
+      );
     }
 
     // 3. Get the invoice
@@ -1409,12 +1441,14 @@ router.post("/release-milestone/:token", async (req, res) => {
       [milestone.invoice_id],
     );
     if (invoiceResult.rows.length === 0) {
-      return res.status(404).send(renderPage({
-        type: "error",
-        title: "Invoice Not Found",
-        body: "We could not find the invoice associated with this milestone.",
-        note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
-      }));
+      return res.status(404).send(
+        renderPage({
+          type: "error",
+          title: "Invoice Not Found",
+          body: "We could not find the invoice associated with this milestone.",
+          note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
+        }),
+      );
     }
     const invoice = invoiceResult.rows[0];
 
@@ -1423,12 +1457,14 @@ router.post("/release-milestone/:token", async (req, res) => {
       invoice.userid,
     ]);
     if (sellerResult.rows.length === 0) {
-      return res.status(404).send(renderPage({
-        type: "error",
-        title: "Seller Not Found",
-        body: "We could not find the seller account for this invoice.",
-        note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
-      }));
+      return res.status(404).send(
+        renderPage({
+          type: "error",
+          title: "Seller Not Found",
+          body: "We could not find the seller account for this invoice.",
+          note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
+        }),
+      );
     }
     const seller = sellerResult.rows[0];
 
@@ -1447,12 +1483,14 @@ router.post("/release-milestone/:token", async (req, res) => {
       [milestone.id],
     );
     if (milestoneLock.rows.length === 0) {
-      return res.status(400).send(renderPage({
-        type: "success",
-        title: "Already Released",
-        body: "This milestone has already been paid out to the seller.",
-        note: "No further action is required. Thank you for using Fonlok.",
-      }));
+      return res.status(400).send(
+        renderPage({
+          type: "success",
+          title: "Already Released",
+          body: "This milestone has already been paid out to the seller.",
+          note: "No further action is required. Thank you for using Fonlok.",
+        }),
+      );
     }
 
     // ── Step 6: Calculate fees ───────────────────────────────────────────────
@@ -1649,23 +1687,28 @@ router.post("/release-milestone/:token", async (req, res) => {
     }
 
     // 13. Return a clean success page to the buyer
-    return res.send(renderPage({
-      type: "success",
-      title: "Funds Released",
-      body: `You have successfully released <strong>${sellerReceives} XAF</strong> to the seller for milestone: <strong>${milestone.label}</strong>.` +
-        (remaining === 0
-          ? `<br><br><span style="color:#16a34a;font-weight:600;">All milestones are now complete. This invoice is fully settled.</span>`
-          : `<br><br>The seller will be notified to proceed with the next milestone.`),
-      note: "Thank you for using Fonlok. You can close this page.",
-    }));
+    return res.send(
+      renderPage({
+        type: "success",
+        title: "Funds Released",
+        body:
+          `You have successfully released <strong>${sellerReceives} XAF</strong> to the seller for milestone: <strong>${milestone.label}</strong>.` +
+          (remaining === 0
+            ? `<br><br><span style="color:#16a34a;font-weight:600;">All milestones are now complete. This invoice is fully settled.</span>`
+            : `<br><br>The seller will be notified to proceed with the next milestone.`),
+        note: "Thank you for using Fonlok. You can close this page.",
+      }),
+    );
   } catch (error) {
     console.error("Milestone release failed:", error.message);
-    return res.status(500).send(renderPage({
-      type: "error",
-      title: "Something Went Wrong",
-      body: "An unexpected error occurred while processing the fund release. No money has been moved.",
-      note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-    }));
+    return res.status(500).send(
+      renderPage({
+        type: "error",
+        title: "Something Went Wrong",
+        body: "An unexpected error occurred while processing the fund release. No money has been moved.",
+        note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
+      }),
+    );
   }
 });
 

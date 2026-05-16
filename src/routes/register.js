@@ -137,7 +137,10 @@ router.post(
         });
         profilePicture = url;
       } catch (uploadErr) {
-        console.warn("⚠️  Profile picture upload failed during registration:", uploadErr.message);
+        console.warn(
+          "⚠️  Profile picture upload failed during registration:",
+          uploadErr.message,
+        );
         // Non-fatal — account is still created without a picture
       }
     }

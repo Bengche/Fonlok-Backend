@@ -101,7 +101,9 @@ router.post(
             "SELECT * FROM invoice_milestones WHERE invoice_id = $1 ORDER BY milestone_number ASC",
             [invoice.id],
           );
-          const completedMs = msRes.rows.filter((m) => m.status === "completed");
+          const completedMs = msRes.rows.filter(
+            (m) => m.status === "completed",
+          );
 
           if (completedMs.length === 0) {
             return res.status(403).json({
@@ -115,19 +117,24 @@ router.post(
           let relevantMs = completedMs;
           if (Array.isArray(milestone_ids) && milestone_ids.length > 0) {
             const requestedIds = milestone_ids.map((id) => parseInt(id, 10));
-            const targeted = completedMs.filter((m) => requestedIds.includes(m.id));
+            const targeted = completedMs.filter((m) =>
+              requestedIds.includes(m.id),
+            );
             if (targeted.length > 0) relevantMs = targeted;
           }
 
           // Find the milestone that has been waiting the longest
           const oldestCompleted = relevantMs.reduce((oldest, m) => {
             if (!oldest) return m;
-            return new Date(m.completed_at) < new Date(oldest.completed_at) ? m : oldest;
+            return new Date(m.completed_at) < new Date(oldest.completed_at)
+              ? m
+              : oldest;
           }, null);
 
           if (oldestCompleted && oldestCompleted.completed_at) {
             const completedAt = new Date(oldestCompleted.completed_at);
-            const hoursSince = (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
+            const hoursSince =
+              (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
             if (hoursSince < 48) {
               const hoursLeft = Math.ceil(48 - hoursSince);
               return res.status(403).json({
