@@ -693,3 +693,481 @@ export async function generateReceiptPdf(invoice_number) {
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
 }
+
+/**
+ * generateStatementPdf(userId, startDate, endDate)
+ *
+ * Generates a branded Fonlok transaction statement PDF for a given date range.
+ * Returns a Buffer containing the PDF bytes, or throws on error.
+ *
+ * Used by:
+ *  - GET /transactions/statement  (download endpoint)
+ */
+export async function generateStatementPdf(userId, startDate, endDate) {
+  // ── Fetch transactions for the date range ──────────────────────────────────
+  const txResult = await db.query(
+    `SELECT id, amount, currency, status, createdat, invoicename, invoicenumber
+     FROM (
+       SELECT 
+         id,
+         amount,
+         'XAF' AS currency,
+         status,
+         createdat,
+         'Payout received' AS invoicename,
+         userid,
+         '' AS invoicenumber
+       FROM payouts
+       WHERE userid = $1
+       UNION ALL
+       SELECT 
+         payments.id,
+         payments.amount,
+         invoices.currency,
+         payments.status,
+         payments.createdat,
+         invoices.invoicename,
+         guests.registered_userid as userid,
+         invoices.invoicenumber
+       FROM payments
+       JOIN invoices ON invoices.id = payments.invoiceid
+       JOIN guests ON guests.invoicenumber = invoices.invoicenumber
+       WHERE guests.registered_userid = $1
+     ) AS all_transactions
+     WHERE createdat >= $2 AND createdat < $3
+     ORDER BY createdat DESC`,
+    [userId, startDate, endDate],
+  );
+  const transactions = txResult.rows;
+
+  // ── Fetch user info for statement header ───────────────────────────────────
+  const userResult = await db.query(
+    `SELECT name, username, email FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (userResult.rows.length === 0)
+    throw new Error(`User ${userId} not found`);
+  const user = userResult.rows[0];
+
+  // ── Build PDF ──────────────────────────────────────────────────────────────
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]); // A4
+  const { width, height } = page.getSize();
+  const margin = 40;
+  const contentW = width - margin * 2;
+
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  // ── Palette (same as receipt) ──────────────────────────────────────────────
+  const navy = rgb(0.059, 0.122, 0.239); // #0F1F3D
+  const amber = rgb(0.961, 0.62, 0.043); // #F59E0B
+  const white = rgb(1, 1, 1);
+  const iceBlue = rgb(0.93, 0.96, 1.0);
+  const lightGray = rgb(0.95, 0.95, 0.96);
+  const darkText = rgb(0.12, 0.14, 0.18);
+  const mutedText = rgb(0.45, 0.47, 0.52);
+  const green = rgb(0.1, 0.5, 0.1);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── HEADER BAR (same style as receipt) ─────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  const headerH = 96;
+  page.drawRectangle({
+    x: 0,
+    y: height - headerH,
+    width,
+    height: headerH,
+    color: navy,
+  });
+  page.drawRectangle({
+    x: 0,
+    y: height - headerH,
+    width,
+    height: 3,
+    color: amber,
+  });
+
+  // Logo: "F" box
+  const logoSize = 38;
+  const logoX = margin;
+  const logoY = height - headerH + (headerH - logoSize) / 2;
+  page.drawRectangle({
+    x: logoX,
+    y: logoY,
+    width: logoSize,
+    height: logoSize,
+    color: amber,
+    borderRadius: 6,
+  });
+  drawCentred(page, "F", {
+    cx: logoX + logoSize / 2,
+    y: logoY + (logoSize - 24) / 2 + 2,
+    size: 24,
+    font: bold,
+    color: navy,
+  });
+
+  // Wordmark "Fonlok" + tagline
+  const wordmarkX = logoX + logoSize + 10;
+  page.drawText("Fonlok", {
+    x: wordmarkX,
+    y: height - headerH + (headerH - 20) / 2 + 14,
+    size: 22,
+    font: bold,
+    color: amber,
+  });
+  page.drawText("Secure Escrow Payments", {
+    x: wordmarkX,
+    y: height - headerH + (headerH - 20) / 2 - 2,
+    size: 8.5,
+    font: regular,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+
+  // Right side: "TRANSACTION STATEMENT" + domain
+  drawRight(page, "TRANSACTION STATEMENT", {
+    rx: width - margin,
+    y: height - headerH + (headerH - 10) / 2 + 14,
+    size: 11,
+    font: bold,
+    color: white,
+  });
+  drawRight(page, BRAND.domain, {
+    rx: width - margin,
+    y: height - headerH + (headerH - 10) / 2 - 2,
+    size: 8.5,
+    font: regular,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── STATEMENT TITLE SECTION ────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  const titleY = height - headerH - 36;
+
+  page.drawText("Account Transaction Statement", {
+    x: margin,
+    y: titleY,
+    size: 17,
+    font: bold,
+    color: darkText,
+  });
+
+  // Period on the right
+  const startFormatted = new Date(startDate).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const endFormatted = new Date(endDate).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  drawRight(page, `${startFormatted} — ${endFormatted}`, {
+    rx: width - margin,
+    y: titleY,
+    size: 9,
+    font: bold,
+    color: navy,
+  });
+
+  // Account info below
+  page.drawText(`Account: ${user.name} (@${user.username})`, {
+    x: margin,
+    y: titleY - 16,
+    size: 8.5,
+    font: regular,
+    color: mutedText,
+  });
+
+  drawRight(page, `Email: ${user.email || "—"}`, {
+    rx: width - margin,
+    y: titleY - 16,
+    size: 8.5,
+    font: regular,
+    color: mutedText,
+  });
+
+  // Amber underline
+  const divY1 = titleY - 26;
+  page.drawRectangle({
+    x: margin,
+    y: divY1,
+    width: contentW,
+    height: 1.5,
+    color: amber,
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── SUMMARY STATS ──────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  const totalAmount = transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const successCount = transactions.filter(
+    (tx) => tx.status === "success" || tx.status === "paid",
+  ).length;
+
+  const statsY = divY1 - 50;
+  const statBoxW = (contentW - 12) / 3;
+
+  function drawStatBox(x, label, value, unit = "") {
+    page.drawRectangle({
+      x,
+      y: statsY - 50,
+      width: statBoxW,
+      height: 50,
+      color: iceBlue,
+      borderRadius: 5,
+    });
+    page.drawText(label, {
+      x: x + 12,
+      y: statsY - 20,
+      size: 7.5,
+      font: bold,
+      color: navy,
+    });
+    page.drawText(`${value.toLocaleString()}${unit}`, {
+      x: x + 12,
+      y: statsY - 38,
+      size: 12,
+      font: bold,
+      color: darkText,
+    });
+  }
+
+  drawStatBox(margin, "Total Amount", totalAmount, " XAF");
+  drawStatBox(
+    margin + statBoxW + 6,
+    "Transactions",
+    transactions.length,
+    "",
+  );
+  drawStatBox(
+    margin + statBoxW * 2 + 12,
+    "Successful",
+    successCount,
+    "",
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── TRANSACTIONS TABLE ─────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  let cursorY = statsY - 70;
+
+  page.drawText("Transaction Details", {
+    x: margin,
+    y: cursorY,
+    size: 10,
+    font: bold,
+    color: darkText,
+  });
+  cursorY -= 16;
+
+  // Table header
+  const headerY = cursorY;
+  page.drawRectangle({
+    x: margin,
+    y: headerY - 20,
+    width: contentW,
+    height: 20,
+    color: navy,
+    borderRadius: 3,
+  });
+
+  const colPositions = [
+    { label: "Date", cx: margin + 60 },
+    { label: "Description", cx: margin + 200 },
+    { label: "Amount", cx: margin + 380 },
+    { label: "Status", cx: margin + 480 },
+  ];
+
+  colPositions.forEach(({ label, cx }) => {
+    drawCentred(page, label, {
+      cx,
+      y: headerY - 10,
+      size: 7.5,
+      font: bold,
+      color: white,
+    });
+  });
+
+  cursorY = headerY - 22;
+  const rowH = 18;
+
+  // Table rows
+  transactions.slice(0, 20).forEach((tx, i) => {
+    if (cursorY < margin + 120) {
+      // Stop if we're getting too close to footer
+      return;
+    }
+
+    // Alternate row background
+    if (i % 2 === 0) {
+      page.drawRectangle({
+        x: margin,
+        y: cursorY - rowH,
+        width: contentW,
+        height: rowH,
+        color: lightGray,
+      });
+    }
+
+    const txDate = new Date(tx.createdat).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    page.drawText(txDate, {
+      x: margin + 10,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: darkText,
+    });
+
+    const desc = (tx.invoicename || tx.invoicenumber || "Transaction")
+      .substring(0, 25);
+    page.drawText(desc, {
+      x: margin + 125,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: darkText,
+    });
+
+    page.drawText(`${Number(tx.amount).toLocaleString()} ${tx.currency}`, {
+      x: margin + 330,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: darkText,
+    });
+
+    const statusLabel = (tx.status || "Pending")
+      .charAt(0)
+      .toUpperCase() + tx.status.slice(1);
+    const statusColor =
+      tx.status === "success" || tx.status === "paid" ? green : mutedText;
+    page.drawText(statusLabel, {
+      x: margin + 440,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: statusColor,
+    });
+
+    cursorY -= rowH;
+  });
+
+  if (transactions.length > 20) {
+    page.drawText(`... and ${transactions.length - 20} more transactions`, {
+      x: margin + 10,
+      y: cursorY - 10,
+      size: 7.5,
+      font: regular,
+      color: mutedText,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── VERIFICATION SEAL (bottom-right) ───────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  const sealCX = width - margin - 54;
+  const sealCY = 136;
+  const sealR1 = 50;
+  const sealR2 = 38;
+
+  page.drawCircle({
+    x: sealCX,
+    y: sealCY,
+    size: sealR1,
+    color: navy,
+    borderColor: amber,
+    borderWidth: 2,
+  });
+  page.drawCircle({
+    x: sealCX,
+    y: sealCY,
+    size: sealR2,
+    color: navy,
+    borderColor: amber,
+    borderWidth: 0.8,
+  });
+
+  drawCentred(page, "VERIFIED", {
+    cx: sealCX,
+    y: sealCY + 20,
+    size: 7.5,
+    font: bold,
+    color: amber,
+  });
+  drawCentred(page, "· · · · ·", {
+    cx: sealCX,
+    y: sealCY + 10,
+    size: 6,
+    font: regular,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+  drawCentred(page, "FONLOK", {
+    cx: sealCX,
+    y: sealCY - 4,
+    size: 13,
+    font: bold,
+    color: white,
+  });
+  page.drawLine({
+    start: { x: sealCX - 22, y: sealCY - 10 },
+    end: { x: sealCX + 22, y: sealCY - 10 },
+    thickness: 0.6,
+    color: amber,
+  });
+  drawCentred(page, "SECURE ESCROW", {
+    cx: sealCX,
+    y: sealCY - 21,
+    size: 6,
+    font: bold,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── FOOTER ─────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  const footerY = 82;
+  page.drawRectangle({ x: 0, y: 0, width, height: footerY, color: navy });
+  page.drawRectangle({ x: 0, y: footerY, width, height: 1.5, color: amber });
+
+  drawCentred(
+    page,
+    "Official transaction statement issued by Fonlok — Secure Escrow Payments for digital services.",
+    {
+      cx: width / 2,
+      y: 58,
+      size: 7,
+      font: regular,
+      color: rgb(0.7, 0.78, 0.9),
+    },
+  );
+  drawCentred(
+    page,
+    `For account verification and dispute resolution.  |  ${BRAND.domain}`,
+    {
+      cx: width / 2,
+      y: 44,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.55, 0.63, 0.76),
+    },
+  );
+  drawCentred(page, `Generated: ${new Date().toUTCString()}`, {
+    cx: width / 2,
+    y: 28,
+    size: 6.5,
+    font: regular,
+    color: rgb(0.5, 0.58, 0.72),
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
