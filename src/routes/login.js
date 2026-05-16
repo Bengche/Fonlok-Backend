@@ -2,11 +2,11 @@ import express from "express";
 const router = express.Router();
 import db from "../controllers/db.js";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import logger from "../utils/logger.js";
+import { issueUserAuthSession } from "../utils/sessionSecurity.js";
 router.use(cookieParser());
 
 router.post(
@@ -37,26 +37,7 @@ router.post(
       const userPassword = user.password;
       const isMatch = await bcrypt.compare(password, userPassword);
       if (isMatch) {
-        const token = jwt.sign(
-          {
-            id: user.id,
-            normalizedEmail: user.normalizedEmail,
-          },
-          process.env.JWT_SECRET,
-          { expiresIn: "6h" },
-        );
-
-        // Use BACKEND_URL to detect if we're actually on HTTPS.
-        // NODE_ENV=production can be set locally (for logging etc.) without
-        // having a real TLS cert, so using NODE_ENV for secure/sameSite causes
-        // browsers to silently drop the cookie on plain-HTTP connections.
-        const isHttps = process.env.BACKEND_URL?.startsWith("https");
-        res.cookie("authToken", token, {
-          httpOnly: true,
-          secure: isHttps,
-          sameSite: isHttps ? "none" : "lax",
-          maxAge: 6 * 60 * 60 * 1000,
-        });
+        const { token } = await issueUserAuthSession(res, user, req, "password");
 
         res.status(200).json({
           message: "Logged in successfully.",

@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { clearAuthCookie, touchUserSession } from "../utils/sessionSecurity.js";
 dotenv.config();
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   // Accept token from httpOnly cookie (preferred) OR Authorization header
   // (fallback for cases where secure cookies can't be sent over plain HTTP).
   let token = req.cookies.authToken || req.cookies.token;
@@ -24,6 +25,16 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded?.sid) {
+      const stillActive = await touchUserSession(decoded.sid, decoded.id, req);
+      if (!stillActive) {
+        clearAuthCookie(res);
+        return res.status(401).json({
+          message: "This session has been revoked. Please sign in again.",
+          code: "SESSION_REVOKED",
+        });
+      }
+    }
     req.user = decoded;
     next();
   } catch (err) {

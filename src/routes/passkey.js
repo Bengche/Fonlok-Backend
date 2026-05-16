@@ -29,6 +29,7 @@ import db from "../controllers/db.js";
 import jwt from "jsonwebtoken";
 import authMiddleware from "../middleware/authMiddleware.js";
 import logger from "../utils/logger.js";
+import { issueUserAuthSession } from "../utils/sessionSecurity.js";
 
 const router = express.Router();
 
@@ -73,7 +74,9 @@ function getExpectedOrigins(req) {
   const origins = configuredOrigins();
   // Prefer the exact runtime browser origin first so WebAuthn verification
   // succeeds even if FRONTEND_URL is stale/missing in deployment settings.
-  return requestOrigin ? Array.from(new Set([requestOrigin, ...origins])) : origins;
+  return requestOrigin
+    ? Array.from(new Set([requestOrigin, ...origins]))
+    : origins;
 }
 
 /**
@@ -100,7 +103,9 @@ function getExpectedRpIds(req) {
   const rpFromConfig = configuredOrigins()
     .map((o) => getRpIdFromOrigin(o))
     .filter(Boolean);
-  return Array.from(new Set([rpFromReq, ...rpFromConfig, getRpId()].filter(Boolean)));
+  return Array.from(
+    new Set([rpFromReq, ...rpFromConfig, getRpId()].filter(Boolean)),
+  );
 }
 
 function selectRpIdForChallenge(req) {
@@ -373,18 +378,7 @@ router.post("/auth-verify", async (req, res) => {
     }
     const user = userResult.rows[0];
 
-    // Issue the same JWT as the password login route
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "6h",
-    });
-
-    const isHttps = process.env.BACKEND_URL?.startsWith("https");
-    res.cookie("authToken", token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: isHttps ? "none" : "lax",
-      maxAge: 6 * 60 * 60 * 1000,
-    });
+    const { token } = await issueUserAuthSession(res, user, req, "passkey");
 
     logger.info("passkey authentication", { userId: user.id });
 

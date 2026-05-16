@@ -202,7 +202,7 @@ router.post(
       const rounds = crypto.randomUUID().slice(0, 12);
       const invoiceNumber = `${userId}-${rounds}`;
       const userid = user.id;
-      const invoiceLink = `${process.env.FRONTEND_URL}/invoice/${invoiceNumber}`;
+      const invoiceLink = `${process.env.FRONTEND_URL}/pay/${invoiceNumber}`;
 
       // Use a transaction so invoice + milestones are created atomically.
       // If milestone inserts fail the invoice insert is also rolled back,
@@ -482,7 +482,11 @@ router.get("/link/:id", async (req, res) => {
   const invoice_number = req.params.id;
   try {
     const result = await db.query(
-      "SELECT * FROM invoices WHERE invoicenumber =$1",
+      `SELECT i.*, u.name AS seller_name, u.username AS seller_username,
+              u.profilepicture AS seller_profilepicture, u.phone AS seller_phone
+         FROM invoices i
+         LEFT JOIN users u ON u.id = i.userid
+        WHERE i.invoicenumber = $1`,
       [invoice_number],
     );
     if (result.rows.length === 0) {

@@ -24,6 +24,12 @@ import {
   deleteFromCloudinary,
   publicIdFromUrl,
 } from "../utils/cloudinary.js";
+import {
+  clearAuthCookie,
+  listUserSessions,
+  revokeOtherUserSessions,
+  revokeUserSession,
+} from "../utils/sessionSecurity.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -38,6 +44,62 @@ const upload = multer({
     if (allowed.includes(file.mimetype)) cb(null, true);
     else cb(new Error("Only image files (JPEG, PNG, WebP, GIF) are allowed."));
   },
+});
+
+router.get("/sessions", authMiddleware, async (req, res) => {
+  try {
+    const sessions = await listUserSessions(req.user.id, req.user.sid);
+    return res.status(200).json({ sessions, currentSid: req.user.sid || null });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ message: "Failed to load active sessions." });
+  }
+});
+
+router.post("/sessions/revoke-others", authMiddleware, async (req, res) => {
+  try {
+    if (!req.user.sid) {
+      return res.status(400).json({
+        message: "Please sign in again before managing active sessions.",
+      });
+    }
+
+    const revokedCount = await revokeOtherUserSessions(req.user.id, req.user.sid);
+    return res.status(200).json({
+      ok: true,
+      revokedCount,
+      message:
+        revokedCount > 0
+          ? "Other active sessions were revoked."
+          : "No other active sessions were found.",
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ message: "Failed to revoke other sessions." });
+  }
+});
+
+router.delete("/sessions/:sid", authMiddleware, async (req, res) => {
+  try {
+    const sid = String(req.params.sid || "").trim();
+    if (!sid) {
+      return res.status(400).json({ message: "A session ID is required." });
+    }
+
+    const revoked = await revokeUserSession(req.user.id, sid);
+    if (!revoked) {
+      return res.status(404).json({ message: "Session not found." });
+    }
+
+    if (sid === req.user.sid) {
+      clearAuthCookie(res);
+    }
+
+    return res.status(200).json({ ok: true, message: "Session revoked." });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ message: "Failed to revoke session." });
+  }
 });
 
 // ── PATCH /user/update-name ──────────────────────────────────────────────────
@@ -304,7 +366,7 @@ router.delete(
       await db.query("DELETE FROM users WHERE id = $1", [userId]);
 
       // 4. Clear the auth cookie
-      res.clearCookie("authToken", { httpOnly: true, sameSite: "lax" });
+      clearAuthCookie(res);
       return res.status(200).json({
         ok: true,
         message: "Your account has been permanently deleted.",
