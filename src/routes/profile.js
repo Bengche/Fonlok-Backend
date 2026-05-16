@@ -34,7 +34,7 @@ router.get("/:username", async (req, res) => {
   try {
     // 1. Find the seller by username
     const userResult = await db.query(
-      "SELECT id, name, username, country, profilepicture, createdat, phone FROM users WHERE username = $1",
+      "SELECT id, name, username, country, profilepicture, createdat, phone, kyc_status FROM users WHERE username = $1",
       [username],
     );
     if (userResult.rows.length === 0) {

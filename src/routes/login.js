@@ -37,7 +37,12 @@ router.post(
       const userPassword = user.password;
       const isMatch = await bcrypt.compare(password, userPassword);
       if (isMatch) {
-        const { token } = await issueUserAuthSession(res, user, req, "password");
+        const { token } = await issueUserAuthSession(
+          res,
+          user,
+          req,
+          "password",
+        );
 
         res.status(200).json({
           message: "Logged in successfully.",

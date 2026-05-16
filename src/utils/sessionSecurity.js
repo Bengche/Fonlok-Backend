@@ -11,7 +11,8 @@ if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-db.query(`
+db.query(
+  `
   CREATE TABLE IF NOT EXISTS user_sessions (
     sid TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -26,14 +27,17 @@ db.query(`
     last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     revoked_at TIMESTAMPTZ
   )
-`).catch((err) => {
+`,
+).catch((err) => {
   logger.error("user_sessions migration error", { error: err.message });
 });
 
-db.query(`
+db.query(
+  `
   CREATE INDEX IF NOT EXISTS idx_user_sessions_user_active
   ON user_sessions (user_id, revoked_at, last_active_at DESC)
-`).catch((err) => {
+`,
+).catch((err) => {
   logger.error("user_sessions index migration error", { error: err.message });
 });
 

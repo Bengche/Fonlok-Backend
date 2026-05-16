@@ -64,7 +64,10 @@ router.post("/sessions/revoke-others", authMiddleware, async (req, res) => {
       });
     }
 
-    const revokedCount = await revokeOtherUserSessions(req.user.id, req.user.sid);
+    const revokedCount = await revokeOtherUserSessions(
+      req.user.id,
+      req.user.sid,
+    );
     return res.status(200).json({
       ok: true,
       revokedCount,
@@ -75,7 +78,9 @@ router.post("/sessions/revoke-others", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    return res.status(500).json({ message: "Failed to revoke other sessions." });
+    return res
+      .status(500)
+      .json({ message: "Failed to revoke other sessions." });
   }
 });
 

@@ -915,4 +915,190 @@ router.get("/adjustments", adminMiddleware, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/kyc?page=1&limit=10&status=pending
+// Paginated list of KYC applications, filterable by status
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/kyc", adminMiddleware, async (req, res) => {
+  const { page, limit, offset } = getPagination(req.query);
+  const statusFilter = req.query.status || "all";
+
+  try {
+    const whereSql = statusFilter !== "all" ? `WHERE k.status = $3` : "";
+    const params = statusFilter !== "all"
+      ? [limit, offset, statusFilter]
+      : [limit, offset];
+
+    const [dataResult, countResult] = await Promise.all([
+      db.query(
+        `SELECT
+           k.id,
+           k.user_id,
+           k.status,
+           k.full_name,
+           k.date_of_birth,
+           k.nationality,
+           k.phone,
+           k.address,
+           k.city,
+           k.country,
+           k.document_type,
+           k.document_number,
+           k.document_front_url,
+           k.document_back_url,
+           k.selfie_url,
+           k.admin_note,
+           k.reviewed_at,
+           k.reviewed_by,
+           k.submitted_at,
+           u.name      AS user_name,
+           u.username  AS user_username,
+           u.email     AS user_email
+         FROM kyc_verifications k
+         JOIN users u ON u.id = k.user_id
+         ${whereSql}
+         ORDER BY k.submitted_at DESC
+         LIMIT $1 OFFSET $2`,
+        params,
+      ),
+      db.query(
+        statusFilter !== "all"
+          ? `SELECT COUNT(*) FROM kyc_verifications WHERE status = $1`
+          : `SELECT COUNT(*) FROM kyc_verifications`,
+        statusFilter !== "all" ? [statusFilter] : [],
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0].count);
+    res.json({ data: dataResult.rows, total, page, hasMore: offset + limit < total });
+  } catch (err) {
+    console.error("Admin KYC list error:", err);
+    res.status(500).json({ message: "Failed to load KYC applications." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/kyc/:id/approve
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/kyc/:id/approve", adminMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { note } = req.body;
+  try {
+    const kycRes = await db.query(
+      `UPDATE kyc_verifications
+       SET status='approved', admin_note=$1, reviewed_at=NOW(), reviewed_by='admin', updated_at=NOW()
+       WHERE id=$2
+       RETURNING user_id, full_name, document_type`,
+      [note || null, id],
+    );
+    if (!kycRes.rows.length) return res.status(404).json({ message: "Application not found." });
+
+    const { user_id, full_name } = kycRes.rows[0];
+    await db.query("UPDATE users SET kyc_status='approved' WHERE id=$1", [user_id]);
+
+    // Push notification
+    try {
+      const { notifyUser } = await import("../middleware/notificationHelper.js");
+      await notifyUser(user_id, "kyc_approved", "Identity Verified ✓", "Congratulations! Your identity has been verified. Your profile now shows a verified badge.", {});
+    } catch { /* non-fatal */ }
+
+    // Email to user
+    const uRes = await db.query("SELECT email, name, username FROM users WHERE id=$1", [user_id]);
+    const userEmail = uRes.rows[0]?.email;
+    const userName  = uRes.rows[0]?.name || uRes.rows[0]?.username || "User";
+    if (userEmail && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+      const body = `
+        <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">🎉 Identity Verified</h2>
+        <p style="color:#475569;margin:0 0 18px;line-height:1.6;">
+          Hi ${userName}, great news — your identity verification has been <strong style="color:#16a34a;">approved</strong>.
+          Your ${BRAND.name} profile now displays a verified badge, which builds trust with buyers on the platform.
+        </p>
+        ${note ? `<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:6px;margin-bottom:18px;"><p style="margin:0;color:#166534;font-size:14px;">Note from our team: ${note}</p></div>` : ""}
+        ${emailTable([
+          ["Name",            full_name],
+          ["Verified On",     new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" })],
+          ["Status",          '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">✓ Verified</span>', ""],
+        ])}
+        ${emailButton(`${process.env.FRONTEND_URL || BRAND.siteUrl}/settings`, "View Your Profile")}
+      `;
+      try {
+        await sgMail.send({
+          to: userEmail,
+          from: { name: BRAND.name, email: BRAND.supportEmail },
+          subject: `${BRAND.name} — Your Identity Has Been Verified ✓`,
+          html: emailWrap(body, { subtitle: "Identity Verification" }),
+        });
+      } catch (e) { console.warn("KYC approval email failed:", e.message); }
+    }
+
+    return res.json({ message: "Application approved and user notified." });
+  } catch (err) {
+    console.error("Admin KYC approve error:", err);
+    return res.status(500).json({ message: "Failed to approve application." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/kyc/:id/reject
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/kyc/:id/reject", adminMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { note } = req.body;
+  try {
+    const kycRes = await db.query(
+      `UPDATE kyc_verifications
+       SET status='rejected', admin_note=$1, reviewed_at=NOW(), reviewed_by='admin', updated_at=NOW()
+       WHERE id=$2
+       RETURNING user_id, full_name`,
+      [note || null, id],
+    );
+    if (!kycRes.rows.length) return res.status(404).json({ message: "Application not found." });
+
+    const { user_id, full_name } = kycRes.rows[0];
+    await db.query("UPDATE users SET kyc_status='rejected' WHERE id=$1", [user_id]);
+
+    // Push notification
+    try {
+      const { notifyUser } = await import("../middleware/notificationHelper.js");
+      await notifyUser(user_id, "kyc_rejected", "Verification Update", "Your identity verification was not approved. Please check your email for details and resubmit with correct documents.", {});
+    } catch { /* non-fatal */ }
+
+    // Email to user
+    const uRes = await db.query("SELECT email, name, username FROM users WHERE id=$1", [user_id]);
+    const userEmail = uRes.rows[0]?.email;
+    const userName  = uRes.rows[0]?.name || uRes.rows[0]?.username || "User";
+    if (userEmail && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+      const body = `
+        <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">Verification Update</h2>
+        <p style="color:#475569;margin:0 0 18px;line-height:1.6;">
+          Hi ${userName}, after reviewing your submitted documents, our compliance team was unable to approve your verification request at this time.
+          You are welcome to resubmit with corrected information or clearer document images.
+        </p>
+        ${note ? `<div style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:6px;margin-bottom:18px;"><p style="margin:0;color:#991b1b;font-size:14px;"><strong>Reason:</strong> ${note}</p></div>` : ""}
+        ${emailTable([
+          ["Name",    full_name],
+          ["Status",  '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Not Approved</span>', ""],
+        ])}
+        <p style="color:#64748b;font-size:13px;margin:16px 0;">
+          Common reasons for rejection: blurry or unclear images, document number mismatch, name does not match account registration, or selfie photo quality is too low.
+        </p>
+        ${emailButton(`${process.env.FRONTEND_URL || BRAND.siteUrl}/kyc`, "Resubmit Verification")}
+      `;
+      try {
+        await sgMail.send({
+          to: userEmail,
+          from: { name: BRAND.name, email: BRAND.supportEmail },
+          subject: `${BRAND.name} — Identity Verification Update`,
+          html: emailWrap(body, { subtitle: "Identity Verification" }),
+        });
+      } catch (e) { console.warn("KYC rejection email failed:", e.message); }
+    }
+
+    return res.json({ message: "Application rejected and user notified." });
+  } catch (err) {
+    console.error("Admin KYC reject error:", err);
+    return res.status(500).json({ message: "Failed to reject application." });
+  }
+});
+
 export default router;
