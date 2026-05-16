@@ -47,6 +47,35 @@ function getOrigin() {
   );
 }
 
+function normalizeOrigin(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\/$/, "");
+}
+
+function configuredOrigins() {
+  const fromEnv = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => normalizeOrigin(o))
+    .filter(Boolean);
+  const front = normalizeOrigin(process.env.FRONTEND_URL || "");
+  const defaults = ["http://localhost:3000"];
+  return Array.from(new Set([front, ...fromEnv, ...defaults].filter(Boolean)));
+}
+
+function getRequestOrigin(req) {
+  const origin = normalizeOrigin(req.headers.origin || "");
+  return origin && origin !== "null" ? origin : null;
+}
+
+function getExpectedOrigins(req) {
+  const requestOrigin = getRequestOrigin(req);
+  const origins = configuredOrigins();
+  // Prefer the exact runtime browser origin first so WebAuthn verification
+  // succeeds even if FRONTEND_URL is stale/missing in deployment settings.
+  return requestOrigin ? Array.from(new Set([requestOrigin, ...origins])) : origins;
+}
+
 /**
  * Derive the WebAuthn Relying Party ID (hostname only, no scheme or port).
  */
@@ -56,6 +85,27 @@ function getRpId() {
   } catch {
     return "localhost";
   }
+}
+
+function getRpIdFromOrigin(origin) {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function getExpectedRpIds(req) {
+  const rpFromReq = getRpIdFromOrigin(getRequestOrigin(req));
+  const rpFromConfig = configuredOrigins()
+    .map((o) => getRpIdFromOrigin(o))
+    .filter(Boolean);
+  return Array.from(new Set([rpFromReq, ...rpFromConfig, getRpId()].filter(Boolean)));
+}
+
+function selectRpIdForChallenge(req) {
+  const ids = getExpectedRpIds(req);
+  return ids[0] || getRpId();
 }
 
 // ── In-memory challenge store ─────────────────────────────────────────────────
@@ -120,7 +170,7 @@ router.post("/register-challenge", authMiddleware, async (req, res) => {
 
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
-      rpID: getRpId(),
+      rpID: selectRpIdForChallenge(req),
       userName: user.email,
       userID: new TextEncoder().encode(String(userId)),
       userDisplayName: user.username || user.email,
@@ -169,8 +219,8 @@ router.post("/register-verify", authMiddleware, async (req, res) => {
     const { verified, registrationInfo } = await verifyRegistrationResponse({
       response: regResponse,
       expectedChallenge: stored.challenge,
-      expectedOrigin: getOrigin(),
-      expectedRPID: getRpId(),
+      expectedOrigin: getExpectedOrigins(req),
+      expectedRPID: getExpectedRpIds(req),
       requireUserVerification: true,
     });
 
@@ -218,7 +268,7 @@ router.post("/register-verify", authMiddleware, async (req, res) => {
 router.post("/auth-challenge", async (req, res) => {
   try {
     const options = await generateAuthenticationOptions({
-      rpID: getRpId(),
+      rpID: selectRpIdForChallenge(req),
       userVerification: "required",
       allowCredentials: [], // empty = discoverable — device discovers the credential itself
     });
@@ -289,8 +339,8 @@ router.post("/auth-verify", async (req, res) => {
       {
         response: req.body,
         expectedChallenge: storedEntry.challenge,
-        expectedOrigin: getOrigin(),
-        expectedRPID: getRpId(),
+        expectedOrigin: getExpectedOrigins(req),
+        expectedRPID: getExpectedRpIds(req),
         requireUserVerification: true,
         credential: {
           id: dbCred.credential_id,
