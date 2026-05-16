@@ -22,6 +22,7 @@
 import cron from "node-cron";
 import sgMail from "@sendgrid/mail";
 import db from "../controllers/db.js";
+import { emailWrap, emailTable, emailButtonNavy } from "../utils/emailTemplate.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -57,6 +58,16 @@ async function ensureTables() {
       level        INTEGER     NOT NULL,  -- 1 = 72h warning, 2 = 7d escalation
       sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (invoicenumber, level)
+    )
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS weekly_digest_sends (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      week_start DATE        NOT NULL,
+      sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, week_start)
     )
   `);
 }
@@ -441,6 +452,117 @@ async function runDisputeEscalation() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// JOB 3 — Weekly user digest (Fridays)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runWeeklyDigest() {
+  try {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday, 5 = Friday
+    if (day !== 5) {
+      console.log("⏭️  [Digest] Skipped (today is not Friday)");
+      return;
+    }
+
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+    const weekStartIso = weekStart.toISOString().slice(0, 10);
+
+    const usersResult = await db.query(
+      "SELECT id, name, email FROM users WHERE email IS NOT NULL AND email <> ''",
+    );
+
+    let sent = 0;
+    for (const user of usersResult.rows) {
+      // Claim send for this user-week first (cluster-safe dedupe)
+      const claim = await db.query(
+        `INSERT INTO weekly_digest_sends (user_id, week_start)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, week_start) DO NOTHING
+         RETURNING id`,
+        [user.id, weekStartIso],
+      );
+      if (claim.rows.length === 0) continue;
+
+      try {
+        const [paidInv, received, pendingMilestones] = await Promise.all([
+          db.query(
+            `SELECT COUNT(*)::int AS count
+             FROM invoices
+             WHERE userid = $1
+               AND status IN ('paid', 'delivered', 'completed')
+               AND COALESCE(paid_at, createdat) >= NOW() - INTERVAL '7 days'`,
+            [user.id],
+          ),
+          db.query(
+            `SELECT COALESCE(SUM(amount), 0)::numeric AS total
+             FROM payouts
+             WHERE userid = $1
+               AND status = 'paid'
+               AND createdat >= NOW() - INTERVAL '7 days'`,
+            [user.id],
+          ),
+          db.query(
+            `SELECT COUNT(*)::int AS count
+             FROM invoice_milestones im
+             JOIN invoices i ON i.id = im.invoice_id
+             WHERE i.userid = $1
+               AND im.status = 'pending'`,
+            [user.id],
+          ),
+        ]);
+
+        const invoicesPaid = Number(paidInv.rows[0]?.count || 0);
+        const totalReceived = Number(received.rows[0]?.total || 0);
+        const pendingCount = Number(pendingMilestones.rows[0]?.count || 0);
+
+        const body = `
+          <h2 style="margin:0 0 10px;color:#0f172a;">Your weekly Fonlok digest</h2>
+          <p style="margin:0 0 14px;color:#475569;line-height:1.6;">
+            Hello ${user.name || "there"}, here is your activity summary for the last 7 days.
+          </p>
+          ${emailTable([
+            ["Invoices paid", `${invoicesPaid}`],
+            ["Funds received", `${totalReceived.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            ["Pending milestones", `${pendingCount}`],
+          ])}
+          ${emailButtonNavy(`${process.env.FRONTEND_URL}/dashboard?tab=stats`, "Open Revenue & Stats")}
+          <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">
+            Keep momentum: mark completed milestones promptly and share invoice links early to reduce payout delays.
+          </p>
+        `;
+
+        await sgMail.send({
+          to: user.email,
+          from: process.env.VERIFIED_SENDER,
+          subject: `Your weekly Fonlok digest • ${invoicesPaid} paid · ${totalReceived.toLocaleString()} XAF received`,
+          html: emailWrap(body, {
+            subtitle: "Weekly Performance Summary",
+            footerNote:
+              "You received this summary because your Fonlok account is active. You can manage notifications in your account settings.",
+          }),
+        });
+        sent += 1;
+      } catch (emailErr) {
+        // delete claim so this user can be retried on next run
+        await db.query(
+          "DELETE FROM weekly_digest_sends WHERE user_id = $1 AND week_start = $2",
+          [user.id, weekStartIso],
+        );
+        console.error(
+          `❌ [Digest] Failed for user ${user.id}:`,
+          emailErr.response?.body || emailErr.message,
+        );
+      }
+    }
+
+    console.log(`📧 [Digest] Weekly digest sent to ${sent} user(s)`);
+  } catch (err) {
+    console.error("❌ [Digest] Job error:", err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export: call this once when the server starts
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -465,6 +587,7 @@ export async function startScheduledJobs() {
   // down for a while, then schedule them to run every hour after that.
   await runInvoiceReminders();
   await runDisputeEscalation();
+  await runWeeklyDigest();
 
   // Every hour at minute 0  (e.g. 09:00, 10:00, 11:00 …)
   cron.schedule("0 * * * *", async () => {
@@ -472,7 +595,12 @@ export async function startScheduledJobs() {
     await runDisputeEscalation();
   });
 
+  // Friday at 09:00 server time
+  cron.schedule("0 9 * * 5", async () => {
+    await runWeeklyDigest();
+  });
+
   console.log(
-    "⏰ Scheduled jobs active &mdash; invoice reminders + dispute escalation",
+    "⏰ Scheduled jobs active &mdash; invoice reminders + dispute escalation + weekly digest",
   );
 }

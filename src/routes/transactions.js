@@ -3,7 +3,7 @@ const router = express.Router();
 import db from "../controllers/db.js";
 import dotenv from "dotenv";
 import { generateStatementPdf } from "../utils/generateReceipt.js";
-import { authMiddleware } from "../auth/authMiddleware.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 dotenv.config();
 
 // GET /transactions/history/:userid
@@ -94,10 +94,7 @@ router.get("/statement", authMiddleware, async (req, res) => {
     const fileName = `fonlok-statement-${startDate.toISOString().split("T")[0]}-${endDate.toISOString().split("T")[0]}.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${fileName}"`,
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     return res.send(pdfBuffer);
   } catch (error) {
     console.error("Failed to generate statement:", error.message);

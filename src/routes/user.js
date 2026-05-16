@@ -35,6 +35,12 @@ dotenv.config();
 
 const saltRounds = 10;
 
+db.query(
+  "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN NOT NULL DEFAULT false",
+).catch((e) =>
+  console.error("⚠️  onboarding_dismissed migration error:", e.message),
+);
+
 // ── Multer — profile picture uploads (memory storage → Cloudinary) ──────────
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -398,6 +404,123 @@ router.get("/me", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ message: "Failed to fetch user info." });
+  }
+});
+
+// GET /user/onboarding-checklist — progress for first-time onboarding
+router.get("/onboarding-checklist", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [userResult, invoiceResult, viewedResult] = await Promise.all([
+      db.query(
+        "SELECT profilepicture, kyc_status, onboarding_dismissed FROM users WHERE id = $1",
+        [userId],
+      ),
+      db.query("SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1", [
+        userId,
+      ]),
+      db.query(
+        "SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1 AND viewed_at IS NOT NULL",
+        [userId],
+      ),
+    ]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const user = userResult.rows[0];
+    const hasProfilePhoto = Boolean(user.profilepicture);
+    const hasCreatedInvoice = Number(invoiceResult.rows[0]?.count || 0) > 0;
+    const hasInvitedClient = Number(viewedResult.rows[0]?.count || 0) > 0;
+    const hasCompletedKyc = user.kyc_status === "approved";
+
+    const steps = [
+      {
+        key: "photo",
+        completed: hasProfilePhoto,
+        href: "/settings",
+      },
+      {
+        key: "invoice",
+        completed: hasCreatedInvoice,
+        href: "/dashboard?action=create",
+      },
+      {
+        key: "invite",
+        completed: hasInvitedClient,
+        href: "/dashboard",
+      },
+      {
+        key: "kyc",
+        completed: hasCompletedKyc,
+        href: "/kyc",
+      },
+    ];
+
+    const completedCount = steps.filter((s) => s.completed).length;
+    const totalCount = steps.length;
+    const allCompleted = completedCount === totalCount;
+
+    return res.status(200).json({
+      steps,
+      completedCount,
+      totalCount,
+      allCompleted,
+      dismissed: Boolean(user.onboarding_dismissed),
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res
+      .status(500)
+      .json({ message: "Failed to load onboarding checklist." });
+  }
+});
+
+// POST /user/onboarding-checklist/dismiss — allow dismiss only after completion
+router.post("/onboarding-checklist/dismiss", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [userResult, invoiceResult, viewedResult] = await Promise.all([
+      db.query("SELECT profilepicture, kyc_status FROM users WHERE id = $1", [
+        userId,
+      ]),
+      db.query("SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1", [
+        userId,
+      ]),
+      db.query(
+        "SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1 AND viewed_at IS NOT NULL",
+        [userId],
+      ),
+    ]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const user = userResult.rows[0];
+    const hasProfilePhoto = Boolean(user.profilepicture);
+    const hasCreatedInvoice = Number(invoiceResult.rows[0]?.count || 0) > 0;
+    const hasInvitedClient = Number(viewedResult.rows[0]?.count || 0) > 0;
+    const hasCompletedKyc = user.kyc_status === "approved";
+
+    if (!(hasProfilePhoto && hasCreatedInvoice && hasInvitedClient && hasCompletedKyc)) {
+      return res.status(400).json({
+        message: "You can dismiss onboarding only after all steps are completed.",
+      });
+    }
+
+    await db.query("UPDATE users SET onboarding_dismissed = true WHERE id = $1", [
+      userId,
+    ]);
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error(err.message);
+    return res
+      .status(500)
+      .json({ message: "Failed to dismiss onboarding checklist." });
   }
 });
 

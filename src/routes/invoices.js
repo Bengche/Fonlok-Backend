@@ -5,8 +5,10 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import authMiddleware from "../middleware/authMiddleware.js";
 import sgMail from "@sendgrid/mail";
+import multer from "multer";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 import {
   emailWrap,
   emailTable,
@@ -31,6 +33,12 @@ db.query(
 db.query(
   "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ",
 ).catch((e) => console.error("⚠️  delivered_at migration error:", e.message));
+
+db.query(
+  "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS seller_logo_url TEXT",
+).catch((e) =>
+  console.error("⚠️  seller_logo_url migration error:", e.message),
+);
 
 // ── Ensure guests.registered_userid column exists ─────────────────────────────
 db.query(
@@ -69,9 +77,20 @@ db.query(
   `UPDATE invoices SET currency = 'XAF' WHERE currency IS NULL OR currency = 'USD'`,
 ).catch((e) => console.error("⚠️  currency normalisation error:", e.message));
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Only JPEG, PNG, WebP, and GIF logos are allowed."));
+  },
+});
+
 router.post(
   "/create",
   authMiddleware,
+  upload.single("seller_logo"),
   [
     body("invoicename")
       .trim()
@@ -146,16 +165,27 @@ router.post(
       milestones, // array of { label, amount, deadline? } &mdash; only for installment
     } = req.body;
 
+    const parsedMilestones =
+      typeof milestones === "string"
+        ? (() => {
+            try {
+              return JSON.parse(milestones);
+            } catch {
+              return null;
+            }
+          })()
+        : milestones;
+
     const isInstallment = payment_type === "installment";
 
     // --- Validate milestones if installment ---
     if (isInstallment) {
-      if (!Array.isArray(milestones) || milestones.length < 2) {
+      if (!Array.isArray(parsedMilestones) || parsedMilestones.length < 2) {
         return res.status(400).json({
           message: "Installment invoices require at least 2 milestones.",
         });
       }
-      const totalMilestoneAmount = milestones.reduce(
+      const totalMilestoneAmount = parsedMilestones.reduce(
         (sum, m) => sum + Number(m.amount || 0),
         0,
       );
@@ -166,7 +196,7 @@ router.post(
           message: `Milestone amounts must add up to the full invoice total (${amount} XAF). Current total: ${totalMilestoneAmount} XAF.`,
         });
       }
-      for (const m of milestones) {
+      for (const m of parsedMilestones) {
         if (!m.label || !m.label.trim()) {
           return res
             .status(400)
@@ -204,6 +234,18 @@ router.post(
       const userid = user.id;
       const invoiceLink = `${process.env.FRONTEND_URL}/pay/${invoiceNumber}`;
 
+      let sellerLogoUrl = null;
+      if (req.file?.buffer) {
+        const { url } = await uploadToCloudinary(req.file.buffer, {
+          folder: "fonlok/invoice-logos",
+          resource_type: "image",
+          public_id: `invoice_logo_${invoiceNumber}`,
+          overwrite: true,
+          invalidate: true,
+        });
+        sellerLogoUrl = url;
+      }
+
       // Use a transaction so invoice + milestones are created atomically.
       // If milestone inserts fail the invoice insert is also rolled back,
       // preventing phantom invoices that have no milestones attached.
@@ -213,7 +255,7 @@ router.post(
         await client.query("BEGIN");
 
         const invoiceResult = await client.query(
-          "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
+          "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type, seller_logo_url) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
           [
             invoicename,
             email,
@@ -225,6 +267,7 @@ router.post(
             description,
             expires_at || null,
             isInstallment ? "installment" : "full",
+            sellerLogoUrl,
           ],
         );
 
@@ -232,8 +275,8 @@ router.post(
 
         // --- Save milestones if installment ---
         if (isInstallment) {
-          for (let i = 0; i < milestones.length; i++) {
-            const m = milestones[i];
+          for (let i = 0; i < parsedMilestones.length; i++) {
+            const m = parsedMilestones[i];
             await client.query(
               "INSERT INTO invoice_milestones (invoice_id, milestone_number, label, amount, deadline) VALUES ($1, $2, $3, $4, $5)",
               [
@@ -246,7 +289,7 @@ router.post(
             );
           }
           console.log(
-            `✅ ${milestones.length} milestones saved for invoice ${invoiceNumber}`,
+            `✅ ${parsedMilestones.length} milestones saved for invoice ${invoiceNumber}`,
           );
         }
 

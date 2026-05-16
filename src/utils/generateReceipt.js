@@ -745,8 +745,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     `SELECT name, username, email FROM users WHERE id = $1`,
     [userId],
   );
-  if (userResult.rows.length === 0)
-    throw new Error(`User ${userId} not found`);
+  if (userResult.rows.length === 0) throw new Error(`User ${userId} not found`);
   const user = userResult.rows[0];
 
   // ── Build PDF ──────────────────────────────────────────────────────────────
@@ -903,7 +902,10 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   // ═══════════════════════════════════════════════════════════════════════════
   // ── SUMMARY STATS ──────────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
-  const totalAmount = transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const totalAmount = transactions.reduce(
+    (sum, tx) => sum + Number(tx.amount),
+    0,
+  );
   const successCount = transactions.filter(
     (tx) => tx.status === "success" || tx.status === "paid",
   ).length;
@@ -937,18 +939,8 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   }
 
   drawStatBox(margin, "Total Amount", totalAmount, " XAF");
-  drawStatBox(
-    margin + statBoxW + 6,
-    "Transactions",
-    transactions.length,
-    "",
-  );
-  drawStatBox(
-    margin + statBoxW * 2 + 12,
-    "Successful",
-    successCount,
-    "",
-  );
+  drawStatBox(margin + statBoxW + 6, "Transactions", transactions.length, "");
+  drawStatBox(margin + statBoxW * 2 + 12, "Successful", successCount, "");
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ── TRANSACTIONS TABLE ─────────────────────────────────────────────────────
@@ -1027,8 +1019,11 @@ export async function generateStatementPdf(userId, startDate, endDate) {
       color: darkText,
     });
 
-    const desc = (tx.invoicename || tx.invoicenumber || "Transaction")
-      .substring(0, 25);
+    const desc = (
+      tx.invoicename ||
+      tx.invoicenumber ||
+      "Transaction"
+    ).substring(0, 25);
     page.drawText(desc, {
       x: margin + 125,
       y: cursorY - 13,
@@ -1045,9 +1040,8 @@ export async function generateStatementPdf(userId, startDate, endDate) {
       color: darkText,
     });
 
-    const statusLabel = (tx.status || "Pending")
-      .charAt(0)
-      .toUpperCase() + tx.status.slice(1);
+    const statusLabel =
+      (tx.status || "Pending").charAt(0).toUpperCase() + tx.status.slice(1);
     const statusColor =
       tx.status === "success" || tx.status === "paid" ? green : mutedText;
     page.drawText(statusLabel, {
