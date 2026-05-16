@@ -11,6 +11,14 @@ import { getSettings, setSetting, bool } from "../utils/platformSettings.js";
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 // ─── Pagination helper ────────────────────────────────────────────────────────
 // Parses ?page and ?limit from query string with safe defaults
 const getPagination = (query) => {
@@ -76,6 +84,102 @@ router.post("/logout", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/verify", adminMiddleware, (req, res) => {
   res.json({ isAdmin: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/feature-request
+// Public endpoint used by users to request a product feature from the admin team
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/feature-request", async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      title,
+      details,
+      userId,
+      username,
+      locale,
+      pathname,
+    } = req.body || {};
+
+    const requestTitle = String(title || "").trim();
+    const requestDetails = String(details || "").trim();
+    const submittedName = String(name || username || "").trim();
+    const submittedEmail = String(email || "").trim();
+
+    if (!requestTitle || !requestDetails) {
+      return res.status(400).json({
+        message: "Feature title and details are required.",
+      });
+    }
+
+    let accountEmail = submittedEmail;
+    let accountLabel = submittedName || "Guest user";
+
+    if (userId) {
+      const userResult = await db.query(
+        "SELECT email, name, username FROM users WHERE id = $1 LIMIT 1",
+        [userId],
+      );
+      const userRow = userResult.rows[0];
+      if (userRow) {
+        accountEmail = accountEmail || userRow.email || "";
+        accountLabel = submittedName || userRow.name || userRow.username || "Registered user";
+      }
+    }
+
+    if (!accountEmail) {
+      return res.status(400).json({
+        message: "Please provide an email address so we can review your request.",
+      });
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL || BRAND.supportEmail;
+    const safeName = escapeHtml(accountLabel);
+    const safeEmail = escapeHtml(accountEmail);
+    const safeTitle = escapeHtml(requestTitle);
+    const safeDetails = escapeHtml(requestDetails).replace(/\n/g, "<br />");
+    const safeLocale = escapeHtml(locale || "en");
+    const safePathname = escapeHtml(pathname || "");
+
+    await sgMail.send({
+      to: adminEmail,
+      from: { name: BRAND.name, email: BRAND.supportEmail },
+      replyTo: accountEmail,
+      subject: `Feature Request: ${requestTitle}`,
+      html: emailWrap(
+        `<h2 style="margin:0 0 8px;color:#0f172a;font-size:22px;font-weight:800;">New Feature Request</h2>
+         <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+           A customer has submitted a feature request through the Fonlok app.
+         </p>
+         <div style="border:1px solid rgba(15,23,42,0.08);border-radius:16px;overflow:hidden;background:#fff;margin-bottom:18px;">
+           <table style="width:100%;border-collapse:collapse;font-size:14px;">
+             <tr><td style="padding:12px 14px;background:#f8fafc;color:#64748b;width:34%;font-weight:700;">Name</td><td style="padding:12px 14px;color:#0f172a;">${safeName}</td></tr>
+             <tr><td style="padding:12px 14px;background:#f8fafc;color:#64748b;font-weight:700;">Email</td><td style="padding:12px 14px;color:#0f172a;">${safeEmail}</td></tr>
+             <tr><td style="padding:12px 14px;background:#f8fafc;color:#64748b;font-weight:700;">Feature</td><td style="padding:12px 14px;color:#0f172a;font-weight:700;">${safeTitle}</td></tr>
+             <tr><td style="padding:12px 14px;background:#f8fafc;color:#64748b;font-weight:700;">Locale</td><td style="padding:12px 14px;color:#0f172a;">${safeLocale}</td></tr>
+             <tr><td style="padding:12px 14px;background:#f8fafc;color:#64748b;font-weight:700;">Page</td><td style="padding:12px 14px;color:#0f172a;">${safePathname || "N/A"}</td></tr>
+           </table>
+         </div>
+         <div style="border-left:4px solid #f59e0b;background:#fffaf0;padding:14px 16px;border-radius:10px;">
+           <p style="margin:0 0 8px;color:#0f172a;font-weight:800;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;">Request details</p>
+           <p style="margin:0;color:#334155;line-height:1.8;">${safeDetails}</p>
+         </div>`
+          ,
+        { subtitle: "Feature Request" },
+      ),
+    });
+
+    return res.json({
+      message: "Your feature request has been sent to the Fonlok team.",
+    });
+  } catch (err) {
+    console.error("Feature request email error:", err);
+    return res.status(500).json({
+      message: "Unable to send your request right now. Please try again.",
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

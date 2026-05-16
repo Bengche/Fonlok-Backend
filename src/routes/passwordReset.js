@@ -8,6 +8,11 @@ import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { emailWrap, emailButton } from "../utils/emailTemplate.js";
 import { BRAND } from "../config/brand.js";
+import {
+  buildEmailCopy,
+  interpolateEmailCopy,
+} from "../utils/emailLanguageCopy.js";
+import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // ─── Ensure the reset-token columns exist ────────────────────────────────────
@@ -66,6 +71,8 @@ router.post(
       );
 
       const resetLink = `${BRAND.siteUrl}/reset-password?token=${token}`;
+      const resetLanguage = await getUserEmailLanguageByEmail(email);
+      const resetCopy = buildEmailCopy(resetLanguage, "resetPassword");
 
       const msg = {
         to: email.toLowerCase().trim(),
@@ -73,14 +80,16 @@ router.post(
           email: process.env.VERIFIED_SENDER,
           name: "Fonlok",
         },
-        subject: "Reset Your Fonlok Password",
+        subject: resetCopy.subject,
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Reset Your Password</h2>
-          <p style="color:#475569;">Hi ${user.name}, we received a request to reset the password for your Fonlok account. Click the button below to create a new password. This link expires in <strong>1 hour</strong>.</p>
-          ${emailButton(resetLink, "Reset my password")}
-          <p style="color:#94a3b8;font-size:13px;margin-top:4px;">If you did not request a password reset, you can safely ignore this email &mdash; your password will not change.</p>`,
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${resetCopy.title}</h2>
+          <p style="color:#475569;">${resetCopy.body(user.name)}</p>
+          ${emailButton(resetLink, resetCopy.button)}
+          <p style="color:#94a3b8;font-size:13px;margin-top:4px;">${resetCopy.ignore}</p>`,
           {
-            footerNote: `For security, this link expires in 1 hour. &copy; ${new Date().getFullYear()} Fonlok &mdash; Secure Escrow Payments`,
+            footerNote: interpolateEmailCopy(resetCopy.footer, {
+              year: new Date().getFullYear(),
+            }),
           },
         ),
       };
@@ -153,17 +162,21 @@ router.post(
       );
 
       // Notify the user by email that their password was changed
+      const passwordLanguage = await getUserEmailLanguageByEmail(user.email);
+      const passwordCopy = buildEmailCopy(passwordLanguage, "resetPassword");
       const msg = {
         to: user.email,
         from: {
           email: process.env.VERIFIED_SENDER,
           name: "Fonlok",
         },
-        subject: "Your Fonlok Password Has Been Changed",
+        subject: passwordCopy.changedSubject,
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Password Changed Successfully</h2>
-          <p style="color:#475569;">Hi ${user.name}, your Fonlok account password has been changed successfully. You can now sign in with your new password.</p>
-          <p style="color:#dc2626;font-weight:600;">If you did not make this change, contact us immediately at <a href="mailto:${process.env.VERIFIED_SENDER}" style="color:#dc2626;">${process.env.VERIFIED_SENDER}</a>.</p>`,
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${passwordCopy.changedTitle}</h2>
+          <p style="color:#475569;">${passwordCopy.changedBody(user.name)}</p>
+          <p style="color:#dc2626;font-weight:600;">${interpolateEmailCopy(passwordCopy.changedWarning, {
+            sender: process.env.VERIFIED_SENDER,
+          })}</p>`,
           {
             footerNote: `&copy; ${new Date().getFullYear()} Fonlok &mdash; Secure Escrow Payments`,
           },

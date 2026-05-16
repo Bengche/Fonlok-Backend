@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 const router = express.Router();
 import axios from "axios";
 import dotenv from "dotenv";
@@ -7,13 +7,15 @@ import sgMail from "@sendgrid/mail";
 import { notifyUser } from "../middleware/notificationHelper.js";
 import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
+import { getUserEmailLanguageById } from "../utils/userLanguage.js";
+import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // --- THE SHARED PAYOUT FUNCTION (Core Logic) ---
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // FEE CONSTANTS
 //
 // When a referral is involved:
@@ -24,20 +26,20 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 // When there is no referral:
 //   Fonlok keeps the full 2% (PLATFORM_FEE_RATE + REFERRAL_FEE_RATE)
 //
-// In both cases the seller always receives gross − 2%.  The only difference is
+// In both cases the seller always receives gross âˆ’ 2%.  The only difference is
 // where the 0.5% portion goes when a referrer exists.
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PLATFORM_FEE_RATE = 0.015; // 1.5% &mdash; Fonlok's cut
 const REFERRAL_FEE_RATE = 0.005; // 0.5% &mdash; referrer's cut (only when referral exists)
 const TOTAL_FEE_RATE = 0.02; // 2.0% &mdash; always deducted from seller payout
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // renderPage({ type, title, body, ctaHref?, ctaLabel?, warningBox?, note? })
 //
 // Generates a consistent, branded HTML page for all server-rendered buyer-
 // facing confirmation and status screens (fund release, error pages, etc.).
 // type: "success" | "error" | "warning" | "info"
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderPage({
   type = "info",
   title,
@@ -50,9 +52,9 @@ function renderPage({
   note,
 } = {}) {
   const palette = {
-    success: { accent: "#16a34a", bg: "#f0fdf4", icon: "✓" },
-    error: { accent: "#dc2626", bg: "#fef2f2", icon: "✗" },
-    warning: { accent: "#d97706", bg: "#fffbeb", icon: "⚠" },
+    success: { accent: "#16a34a", bg: "#f0fdf4", icon: "âœ“" },
+    error: { accent: "#dc2626", bg: "#fef2f2", icon: "âœ—" },
+    warning: { accent: "#d97706", bg: "#fffbeb", icon: "âš " },
     info: { accent: "#0F1F3D", bg: "#f8fafc", icon: "i" },
   };
   const { accent, bg, icon } = palette[type] ?? palette.info;
@@ -75,7 +77,7 @@ function renderPage({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${title} — Fonlok</title>
+  <title>${title} â€” Fonlok</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${bg};min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
@@ -103,7 +105,7 @@ function renderPage({
 </html>`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // executePayout(invoiceId)
 // Shared core for Method 1 (code-based release).
 // invoiceId = invoices.id (the numeric primary key)
@@ -115,11 +117,11 @@ function renderPage({
 // proceed; the other gets zero rows and throws immediately &mdash; before any money
 // moves.  This eliminates the TOCTOU window that previously existed between
 // the "already paid?" read and the "mark as paid" write.
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const executePayout = async (invoiceId) => {
-  // ── Step 1: Atomically claim the payout slot ─────────────────────────────
+  // â”€â”€ Step 1: Atomically claim the payout slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // UPDATE returns the row only when is_used was false; any concurrent request
-  // finds is_used already true and gets back zero rows → throws before Campay.
+  // finds is_used already true and gets back zero rows â†’ throws before Campay.
   const lockResult = await db.query(
     `UPDATE confirmation_codes
         SET is_used = true
@@ -134,7 +136,7 @@ const executePayout = async (invoiceId) => {
     );
   }
 
-  // ── Step 2: Fetch invoice & seller ──────────────────────────────────────
+  // â”€â”€ Step 2: Fetch invoice & seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const invoiceRes = await db.query("SELECT * FROM invoices WHERE id = $1", [
     invoiceId,
   ]);
@@ -149,7 +151,7 @@ const executePayout = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
-  // ── Step 3: Determine referral and calculate fees ────────────────────────
+  // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Check for a referrer BEFORE computing fees so the correct split is used.
   const referrerCheck = await db.query(
     "SELECT referred_by FROM users WHERE id = $1",
@@ -158,14 +160,14 @@ const executePayout = async (invoiceId) => {
   const referrerId = referrerCheck.rows[0]?.referred_by ?? null;
   const hasReferral = referrerId !== null;
 
-  // Seller always receives gross − 2%.  When a referrer exists, Fonlok keeps
+  // Seller always receives gross âˆ’ 2%.  When a referrer exists, Fonlok keeps
   // only 1.5% and the 0.5% remainder goes to the referrer.
   const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5%
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2%
-  const sellerReceives = grossAmount - totalFee; // always gross − 2%
+  const sellerReceives = grossAmount - totalFee; // always gross âˆ’ 2%
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -173,7 +175,7 @@ const executePayout = async (invoiceId) => {
       `referralEarning=${referralEarning}, sellerReceives=${sellerReceives}`,
   );
 
-  // ── Step 4: Transfer to seller via Campay ───────────────────────────────
+  // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
     username: process.env.CAMPAY_USERNAME,
     password: process.env.CAMPAY_PASSWORD,
@@ -191,7 +193,7 @@ const executePayout = async (invoiceId) => {
     { headers: { Authorization: `Token ${auth.data.token}` } },
   );
 
-  // ── Step 5: Record the payout & mark invoice completed ─────────────────
+  // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await db.query(
     "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
     [
@@ -210,7 +212,7 @@ const executePayout = async (invoiceId) => {
     invoiceId,
   ]);
 
-  // ── Step 6: Notify the seller ────────────────────────────────────────────
+  // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   notifyUser(
     sellerId,
     "payout_sent",
@@ -219,7 +221,7 @@ const executePayout = async (invoiceId) => {
     { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
   );
 
-  // ── Step 7: Credit referral earnings &mdash; INSERT first, balance only if new ──
+  // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
   // The earnings row is the single source of truth.  INSERT with RETURNING
   // tells us whether a genuinely new row was written (vs a conflict/no-op).
   // The balance UPDATE only runs when a new row was actually inserted, so a
@@ -246,26 +248,27 @@ const executePayout = async (invoiceId) => {
           [referralEarning, referrerId],
         );
         console.log(
-          `✅ Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
+          `âœ… Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
             `Fonlok net fee: ${fonlokNet} XAF (1.5%).`,
         );
       } else {
         console.log(
-          `ℹ️ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
+          `â„¹ï¸ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
         );
       }
     } catch (referralErr) {
       console.error(
-        "⚠️ Referral credit error (payout still succeeded):",
+        "âš ï¸ Referral credit error (payout still succeeded):",
         referralErr.message,
       );
     }
   }
 
-  // ── Step 8: Send PDF receipt to seller ──────────────────────────────────
+  // â”€â”€ Step 8: Send PDF receipt to seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
-    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber);
+    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber, sellerLanguage);
     sellerPdfAttachment = {
       content: pdfBuffer.toString("base64"),
       filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -273,36 +276,36 @@ const executePayout = async (invoiceId) => {
       disposition: "attachment",
     };
   } catch (pdfErr) {
-    console.error("⚠️ Could not generate seller receipt PDF:", pdfErr.message);
+    console.error("âš ï¸ Could not generate seller receipt PDF:", pdfErr.message);
   }
 
-  const feeLabel = hasReferral ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
+  const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
+  const feeLabel = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
     from: process.env.VERIFIED_SENDER,
-    subject: `Payout Confirmed  - Invoice ${invoiceRow.invoicenumber} | Fonlok`,
+    subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
-      `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payout Confirmed &mdash; Funds Sent</h2>
-      <p style="color:#475569;">Hello ${invoiceUser.name}, the buyer has confirmed delivery and your funds have been transferred to your Mobile Money account.</p>
+      `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
+      <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
-        ["Invoice Number", invoiceRow.invoicenumber],
-        ["Invoice Name", invoiceRow.invoicename],
-        ["Gross Amount", `${grossAmount} XAF`],
-        [feeLabel, `−${totalFee} XAF`, "color:#dc2626;"],
+        [sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number", invoiceRow.invoicenumber],
+        [sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+        [payoutCopy.grossAmount, `${grossAmount} XAF`],
+        [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
         [
-          "Amount Sent",
+          payoutCopy.amountSent,
           `${sellerReceives} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
-        ["Sent To", invoiceUser.phone],
-        ["Status", "&#10003;&nbsp;Paid Out", "color:#16a34a;font-weight:600;"],
+        [payoutCopy.sentTo, invoiceUser.phone],
+        [payoutCopy.status, `&#10003;&nbsp;${payoutCopy.paidOut}`, "color:#16a34a;font-weight:600;"],
       ])}
-      <p style="color:#475569;margin-top:12px;">Your official payout receipt is attached to this email as a PDF. You can also download it at any time using the button below.</p>
-      ${emailButton(sellerReceiptDownloadLink, "Download PDF Receipt")}`,
+      <p style="color:#475569;margin-top:12px;">${payoutCopy.receiptMessage}</p>
+      ${emailButton(sellerReceiptDownloadLink, payoutCopy.downloadButton)}`,
       {
-        footerNote:
-          "Thank you for using Fonlok. This email confirms your payout has been processed. Please keep this receipt for your records.",
+        footerNote: payoutCopy.footer,
       },
     ),
     ...(sellerPdfAttachment ? { attachments: [sellerPdfAttachment] } : {}),
@@ -310,10 +313,10 @@ const executePayout = async (invoiceId) => {
 
   try {
     await sgMail.send(sellerReceiptMsg);
-    console.log("✅ Seller receipt email sent.");
+    console.log("âœ… Seller receipt email sent.");
   } catch (emailErr) {
     console.error(
-      "❌ Seller Receipt Email Error:",
+      "âŒ Seller Receipt Email Error:",
       emailErr.response ? emailErr.response.body : emailErr.message,
     );
   }
@@ -323,7 +326,7 @@ const executePayout = async (invoiceId) => {
 
 // FUNCTION WITH LINK
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // executePayoutLink(invoiceId)
 // Shared core for Method 2 (email-link release).
 //
@@ -332,9 +335,9 @@ const executePayout = async (invoiceId) => {
 // know it is the correct invoice for this token.
 //
 // RACE-CONDITION PROTECTION: identical atomic-lock pattern to executePayout.
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const executePayoutLink = async (invoiceId) => {
-  // ── Step 1: Atomically claim the payout slot ─────────────────────────────
+  // â”€â”€ Step 1: Atomically claim the payout slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const lockResult = await db.query(
     `UPDATE confirmation_codes
         SET is_used = true
@@ -349,7 +352,7 @@ const executePayoutLink = async (invoiceId) => {
     );
   }
 
-  // ── Step 2: Fetch invoice & seller ──────────────────────────────────────
+  // â”€â”€ Step 2: Fetch invoice & seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const invoiceRes = await db.query("SELECT * FROM invoices WHERE id = $1", [
     invoiceId,
   ]);
@@ -364,7 +367,7 @@ const executePayoutLink = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
-  // ── Step 3: Determine referral and calculate fees ────────────────────────
+  // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const referrerCheck = await db.query(
     "SELECT referred_by FROM users WHERE id = $1",
     [sellerId],
@@ -377,7 +380,7 @@ const executePayoutLink = async (invoiceId) => {
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5%
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2%
-  const sellerReceives = grossAmount - totalFee; // gross − 2%
+  const sellerReceives = grossAmount - totalFee; // gross âˆ’ 2%
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -385,7 +388,7 @@ const executePayoutLink = async (invoiceId) => {
       `referralEarning=${referralEarning}, sellerReceives=${sellerReceives}`,
   );
 
-  // ── Step 4: Transfer to seller via Campay ───────────────────────────────
+  // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
     username: process.env.CAMPAY_USERNAME,
     password: process.env.CAMPAY_PASSWORD,
@@ -403,7 +406,7 @@ const executePayoutLink = async (invoiceId) => {
     { headers: { Authorization: `Token ${auth.data.token}` } },
   );
 
-  // ── Step 5: Record the payout & mark invoice completed ─────────────────
+  // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await db.query(
     "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
     [
@@ -419,7 +422,7 @@ const executePayoutLink = async (invoiceId) => {
     invoiceId,
   ]);
 
-  // ── Step 6: Notify the seller ────────────────────────────────────────────
+  // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   notifyUser(
     sellerId,
     "payout_sent",
@@ -428,7 +431,7 @@ const executePayoutLink = async (invoiceId) => {
     { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
   );
 
-  // ── Step 7: Credit referral earnings &mdash; INSERT first, balance only if new ──
+  // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
   if (hasReferral && referralEarning > 0) {
     try {
       const earningsInsert = await db.query(
@@ -451,26 +454,27 @@ const executePayoutLink = async (invoiceId) => {
           [referralEarning, referrerId],
         );
         console.log(
-          `✅ Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
+          `âœ… Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
             `Fonlok net fee: ${fonlokNet} XAF (1.5%).`,
         );
       } else {
         console.log(
-          `ℹ️ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
+          `â„¹ï¸ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
         );
       }
     } catch (referralErr) {
       console.error(
-        "⚠️ Referral credit error (payout still succeeded):",
+        "âš ï¸ Referral credit error (payout still succeeded):",
         referralErr.message,
       );
     }
   }
 
-  // ── Step 8: Send PDF receipt to seller ──────────────────────────────────
+  // â”€â”€ Step 8: Send PDF receipt to seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
-    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber);
+    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber, sellerLanguage);
     sellerPdfAttachment = {
       content: pdfBuffer.toString("base64"),
       filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -478,36 +482,36 @@ const executePayoutLink = async (invoiceId) => {
       disposition: "attachment",
     };
   } catch (pdfErr) {
-    console.error("⚠️ Could not generate seller receipt PDF:", pdfErr.message);
+    console.error("âš ï¸ Could not generate seller receipt PDF:", pdfErr.message);
   }
 
-  const feeLabel = hasReferral ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
+  const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
+  const feeLabel = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
     from: process.env.VERIFIED_SENDER,
-    subject: `Payout Confirmed  - Invoice ${invoiceRow.invoicenumber} | Fonlok`,
+    subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
-      `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payout Confirmed &mdash; Funds Sent</h2>
-      <p style="color:#475569;">Hello ${invoiceUser.name}, the buyer has confirmed delivery and your funds have been transferred to your Mobile Money account.</p>
+      `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
+      <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
-        ["Invoice Number", invoiceRow.invoicenumber],
-        ["Invoice Name", invoiceRow.invoicename],
-        ["Gross Amount", `${grossAmount} XAF`],
-        [feeLabel, `−${totalFee} XAF`, "color:#dc2626;"],
+        [sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number", invoiceRow.invoicenumber],
+        [sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+        [payoutCopy.grossAmount, `${grossAmount} XAF`],
+        [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
         [
-          "Amount Sent",
+          payoutCopy.amountSent,
           `${sellerReceives} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
-        ["Sent To", invoiceUser.phone],
-        ["Status", "&#10003;&nbsp;Paid Out", "color:#16a34a;font-weight:600;"],
+        [payoutCopy.sentTo, invoiceUser.phone],
+        [payoutCopy.status, `&#10003;&nbsp;${payoutCopy.paidOut}`, "color:#16a34a;font-weight:600;"],
       ])}
-      <p style="color:#475569;margin-top:12px;">Your official payout receipt is attached to this email as a PDF. You can also download it at any time using the button below.</p>
-      ${emailButton(sellerReceiptDownloadLink, "Download PDF Receipt")}`,
+      <p style="color:#475569;margin-top:12px;">${payoutCopy.receiptMessage}</p>
+      ${emailButton(sellerReceiptDownloadLink, payoutCopy.downloadButton)}`,
       {
-        footerNote:
-          "Thank you for using Fonlok. This email confirms your payout has been processed. Please keep this receipt for your records.",
+        footerNote: payoutCopy.footer,
       },
     ),
     ...(sellerPdfAttachment ? { attachments: [sellerPdfAttachment] } : {}),
@@ -515,10 +519,10 @@ const executePayoutLink = async (invoiceId) => {
 
   try {
     await sgMail.send(sellerReceiptMsg);
-    console.log("✅ Seller receipt email sent.");
+    console.log("âœ… Seller receipt email sent.");
   } catch (error) {
     console.error(
-      "❌ Seller Receipt Email Error:",
+      "âŒ Seller Receipt Email Error:",
       error.response ? error.response.body : error.message,
     );
   }
@@ -656,7 +660,7 @@ router.get("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // Token is valid — show the confirmation page instead of executing immediately
+    // Token is valid â€” show the confirmation page instead of executing immediately
     res.send(
       renderPage({
         type: "warning",
@@ -665,7 +669,7 @@ router.get("/verify-payout/:token/:id", async (req, res) => {
         warningBox:
           "<strong>This action cannot be undone.</strong><br>Only confirm if you have received your order and are fully satisfied. If there is an issue, contact the seller before proceeding.",
         formAction: `/api/verify-payout/${token}/${id}`,
-        formLabel: "✓ Yes, Release Funds to Seller",
+        formLabel: "âœ“ Yes, Release Funds to Seller",
         note: "If you have not received your order or are not satisfied, do <strong>not</strong> click the button above.",
       }),
     );
@@ -719,7 +723,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // ── Security: verify the URL :id param matches the token's invoice ────
+    // â”€â”€ Security: verify the URL :id param matches the token's invoice â”€â”€â”€â”€
     if (String(userInvoiceId) !== String(id)) {
       return res.status(400).send(
         renderPage({
@@ -747,7 +751,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // Execute the payout — pass the invoice id from the token (authoritative)
+    // Execute the payout â€” pass the invoice id from the token (authoritative)
     await executePayoutLink(userInvoiceId);
 
     res.send(
@@ -771,7 +775,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
   }
 });
 
-// --- METHOD 3a: MILESTONE RELEASE — Direct JSON API (buyer dashboard UI) ---
+// --- METHOD 3a: MILESTONE RELEASE â€” Direct JSON API (buyer dashboard UI) ---
 // POST /release-milestone/confirm
 // Body: { invoice_number, buyer_token, milestone_id }
 //
@@ -808,7 +812,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
     }
     const milestone = msResult.rows[0];
 
-    // 3. Status guards — give precise errors before touching the DB lock
+    // 3. Status guards â€” give precise errors before touching the DB lock
     if (milestone.status === "released") {
       return res
         .status(400)
@@ -839,7 +843,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
     }
     const seller = sellerResult.rows[0];
 
-    // 5. Atomic lock — prevents double-release from concurrent requests
+    // 5. Atomic lock â€” prevents double-release from concurrent requests
     const milestoneLock = await db.query(
       `UPDATE invoice_milestones
           SET status        = 'released',
@@ -939,12 +943,12 @@ router.post("/release-milestone/confirm", async (req, res) => {
             [msReferralEarning, referrerIdMs],
           );
           console.log(
-            `✅ Milestone referral: ${msReferralEarning} XAF credited to user ${referrerIdMs}.`,
+            `âœ… Milestone referral: ${msReferralEarning} XAF credited to user ${referrerIdMs}.`,
           );
         }
       } catch (referralErr) {
         console.error(
-          "⚠️ Referral credit error (milestone payout succeeded):",
+          "âš ï¸ Referral credit error (milestone payout succeeded):",
           referralErr.message,
         );
       }
@@ -961,7 +965,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         milestone.invoice_id,
       ]);
       console.log(
-        `✅ All milestones released — invoice ${invoice.invoicenumber} marked completed.`,
+        `âœ… All milestones released â€” invoice ${invoice.invoicenumber} marked completed.`,
       );
     }
 
@@ -978,7 +982,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         };
       } catch (pdfErr) {
         console.error(
-          "⚠️ Could not generate milestone receipt PDF:",
+          "âš ï¸ Could not generate milestone receipt PDF:",
           pdfErr.message,
         );
       }
@@ -989,7 +993,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
       const sellerMsg = {
         to: seller.email,
         from: process.env.VERIFIED_SENDER,
-        subject: `Milestone Payment Released — ${milestone.label} | Fonlok`,
+        subject: `Milestone Payment Released â€” ${milestone.label} | Fonlok`,
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
           <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${invoice.invoicename}</strong> and your payment has been processed.</p>
@@ -997,7 +1001,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
             ["Invoice", invoice.invoicenumber],
             ["Milestone", milestone.label],
             ["Gross Amount", `${milestoneAmount} XAF`],
-            [msFeeLabel, `−${fonlokFee} XAF`, "color:#dc2626;"],
+            [msFeeLabel, `âˆ’${fonlokFee} XAF`, "color:#dc2626;"],
             [
               "Amount Sent to You",
               `${sellerReceives} XAF`,
@@ -1021,10 +1025,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
           : {}),
       };
       await sgMail.send(sellerMsg);
-      console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
+      console.log(`âœ… Milestone receipt sent to seller ${seller.email}`);
     } catch (emailErr) {
       console.error(
-        "❌ Seller milestone receipt email error:",
+        "âŒ Seller milestone receipt email error:",
         emailErr.message,
       );
     }
@@ -1045,7 +1049,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
   }
 });
 
-// --- METHOD 3b: MILESTONE RELEASE — Authenticated Buyer (logged-in account) ---
+// --- METHOD 3b: MILESTONE RELEASE â€” Authenticated Buyer (logged-in account) ---
 // POST /release-milestone/by-user
 // Body: { milestone_id }
 // Auth: Bearer JWT (Fonlok user account)
@@ -1123,7 +1127,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
     }
     const seller = sellerResult.rows[0];
 
-    // 7. Atomic lock — prevents double-release from concurrent requests
+    // 7. Atomic lock â€” prevents double-release from concurrent requests
     const milestoneLock = await db.query(
       `UPDATE invoice_milestones
           SET status        = 'released',
@@ -1259,45 +1263,45 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
           pdfErr.message,
         );
       }
-      const feeLabel = hasReferral ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
-      const receiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
-      await sgMail.send({
+      const sellerLanguage = await getUserEmailLanguageById(invoice.userid);
+      const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
+      const msFeeLabelLocalized = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
+      const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
+      const sellerMsg = {
         to: seller.email,
         from: process.env.VERIFIED_SENDER,
-        subject: `Milestone Payment Released \u2014 ${milestone.label} | Fonlok`,
+        subject: payoutCopy.subject(invoice.invoicenumber),
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
-          <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${invoice.invoicename}</strong> and your payment has been processed.</p>
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${milestone.label} — ${payoutCopy.title}</h2>
+          <p style="color:#475569;">${payoutCopy.body(seller.name)}</p>
           ${emailTable([
-            ["Invoice", invoice.invoicenumber],
-            ["Milestone", milestone.label],
-            ["Gross Amount", `${milestoneAmount} XAF`],
-            [feeLabel, `\u2212${fonlokFee} XAF`, "color:#dc2626;"],
+            [sellerLanguage === "fr" ? "Facture" : "Invoice", invoice.invoicenumber],
+            [sellerLanguage === "fr" ? "Jalon" : "Milestone", milestone.label],
+            [payoutCopy.grossAmount, `${milestoneAmount} XAF`],
+            [msFeeLabelLocalized, `\u2212${totalFee} XAF`, "color:#dc2626;"],
             [
-              "Amount Sent to You",
+              payoutCopy.amountSent,
               `${sellerReceives} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
-            ["Sent To", seller.phone],
+            [payoutCopy.sentTo, seller.phone],
           ])}
           ${
             remaining === 0
-              ? '<p style="color:#16a34a;font-weight:600;margin-top:12px;">All milestones have been released. This invoice is now complete.</p>'
-              : `<p style="color:#475569;margin-top:12px;">Remaining milestones: <strong>${remaining}</strong></p>`
+              ? `<p style="color:#16a34a;font-weight:600;margin-top:12px;">${sellerLanguage === "fr" ? "Tous les jalons ont été libérés. Cette facture est maintenant complète." : "All milestones have been released. This invoice is now complete."}</p>`
+              : `<p style="color:#475569;margin-top:12px;">${sellerLanguage === "fr" ? "Jalons restants" : "Remaining milestones"}: <strong>${remaining}</strong></p>`
           }
-          ${emailButton(receiptLink, "Download PDF Receipt")}`,
+          ${emailButton(milestoneReceiptLink, payoutCopy.downloadButton)}`,
           {
-            footerNote:
-              "Thank you for using Fonlok. This email confirms your milestone payout has been processed.",
+            footerNote: payoutCopy.footer,
           },
         ),
         ...(pdfAttachment ? { attachments: [pdfAttachment] } : {}),
-      });
+      };
+      await sgMail.send(sellerMsg);
+      console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
     } catch (emailErr) {
-      console.error(
-        "\u274c Seller milestone receipt email error:",
-        emailErr.response?.body || emailErr.message,
-      );
+      console.error("❌ Seller milestone receipt email error:", emailErr.message);
     }
 
     return res.status(200).json({
@@ -1308,407 +1312,11 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       remaining,
     });
   } catch (error) {
-    console.error("\u274c Milestone release (by-user) failed:", error.message);
+    console.error("Milestone user release failed:", error.message);
     return res.status(500).json({
       message:
         "An error occurred while releasing the payment. Please try again or contact support.",
     });
-  }
-});
-
-// --- METHOD 3: MILESTONE RELEASE ---
-// GET  \u2192 shows the buyer a confirmation page (no money moves).
-// POST \u2192 executes the payout atomically after the buyer confirms.
-//
-// Previously the GET fired the payout immediately, which meant any email-
-// client link-prefetcher, Outlook Safe Links scanner, or Gmail preview fetch
-// could silently trigger an irreversible money transfer.  The GET now only
-// renders a confirmation card; the actual payout runs exclusively on POST.
-
-router.get("/release-milestone/:token", async (req, res) => {
-  const { token } = req.params;
-
-  try {
-    const msResult = await db.query(
-      "SELECT * FROM invoice_milestones WHERE release_token = $1",
-      [token],
-    );
-    if (msResult.rows.length === 0) {
-      return res.status(404).send(
-        renderPage({
-          type: "error",
-          title: "Invalid Link",
-          body: "This milestone release link is invalid or has already been used.",
-          note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }),
-      );
-    }
-    const milestone = msResult.rows[0];
-    if (milestone.status === "released") {
-      return res.status(400).send(
-        renderPage({
-          type: "success",
-          title: "Already Released",
-          body: "This milestone has already been paid out to the seller.",
-          note: "No further action is required. Thank you for using Fonlok.",
-        }),
-      );
-    }
-    if (milestone.status !== "completed") {
-      return res.status(400).send(
-        renderPage({
-          type: "warning",
-          title: "Milestone Not Yet Complete",
-          body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
-          note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }),
-      );
-    }
-
-    // Show confirmation page — payout only fires on POST
-    res.send(
-      renderPage({
-        type: "warning",
-        title: `Release Payment for \u201c${milestone.label}\u201d?`,
-        body: `You are about to release the escrowed payment for milestone: <strong>${milestone.label}</strong>.`,
-        warningBox:
-          "<strong>This action cannot be undone.</strong><br>Only confirm if the seller has completed this milestone to your full satisfaction. If there is any issue, contact the seller first.",
-        formAction: `/api/release-milestone/${token}`,
-        formLabel: "\u2713 Yes, Release Payment to Seller",
-        note: "If the milestone is not yet complete, do <strong>not</strong> click the button above.",
-      }),
-    );
-  } catch (error) {
-    console.error("Milestone confirmation page error:", error.message);
-    res.status(500).send(
-      renderPage({
-        type: "error",
-        title: "Something Went Wrong",
-        body: "An unexpected error occurred. Please try again or contact support.",
-        note: "Email us at <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-      }),
-    );
-  }
-});
-
-router.post("/release-milestone/:token", async (req, res) => {
-  const { token } = req.params;
-
-  try {
-    // 1. Find the milestone by its release token
-    const msResult = await db.query(
-      "SELECT * FROM invoice_milestones WHERE release_token = $1",
-      [token],
-    );
-    if (msResult.rows.length === 0) {
-      return res.status(404).send(
-        renderPage({
-          type: "error",
-          title: "Invalid Link",
-          body: "This milestone release link is invalid or has already been used.",
-          note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }),
-      );
-    }
-
-    const milestone = msResult.rows[0];
-
-    // 2. Guard checks — give precise error messages before the atomic lock
-    if (milestone.status === "released") {
-      return res.status(400).send(
-        renderPage({
-          type: "success",
-          title: "Already Released",
-          body: "This milestone has already been paid out to the seller.",
-          note: "No further action is required. Thank you for using Fonlok.",
-        }),
-      );
-    }
-    if (milestone.status !== "completed") {
-      return res.status(400).send(
-        renderPage({
-          type: "warning",
-          title: "Milestone Not Yet Complete",
-          body: "This milestone has not been marked as complete by the seller yet. You can only release payment once the seller has confirmed the work is done.",
-          note: "Please check back once the seller has completed this milestone, or contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
-        }),
-      );
-    }
-
-    // 3. Get the invoice
-    const invoiceResult = await db.query(
-      "SELECT * FROM invoices WHERE id = $1",
-      [milestone.invoice_id],
-    );
-    if (invoiceResult.rows.length === 0) {
-      return res.status(404).send(
-        renderPage({
-          type: "error",
-          title: "Invoice Not Found",
-          body: "We could not find the invoice associated with this milestone.",
-          note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
-        }),
-      );
-    }
-    const invoice = invoiceResult.rows[0];
-
-    // 4. Get the seller info
-    const sellerResult = await db.query("SELECT * FROM users WHERE id = $1", [
-      invoice.userid,
-    ]);
-    if (sellerResult.rows.length === 0) {
-      return res.status(404).send(
-        renderPage({
-          type: "error",
-          title: "Seller Not Found",
-          body: "We could not find the seller account for this invoice.",
-          note: "Contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number for assistance.",
-        }),
-      );
-    }
-    const seller = sellerResult.rows[0];
-
-    // ── Step 5: Atomically claim this milestone (race-condition lock) ───────
-    // UPDATE only succeeds when status is currently 'completed'.  A concurrent
-    // request will find status = 'released' and get zero rows → aborts before
-    // any money moves.
-    const milestoneLock = await db.query(
-      `UPDATE invoice_milestones
-          SET status        = 'released',
-              released_at   = NOW(),
-              release_token = NULL
-        WHERE id     = $1
-          AND status = 'completed'
-        RETURNING id`,
-      [milestone.id],
-    );
-    if (milestoneLock.rows.length === 0) {
-      return res.status(400).send(
-        renderPage({
-          type: "success",
-          title: "Already Released",
-          body: "This milestone has already been paid out to the seller.",
-          note: "No further action is required. Thank you for using Fonlok.",
-        }),
-      );
-    }
-
-    // ── Step 6: Calculate fees ───────────────────────────────────────────────
-    const milestoneAmount = Number(milestone.amount);
-
-    // Same split as invoice payouts:
-    //   referral involved  → seller gets gross−2%, referrer gets 0.5%, Fonlok 1.5%
-    //   no referral        → seller gets gross−2%, Fonlok 2%
-    const referrerCheckMs = await db.query(
-      "SELECT referred_by FROM users WHERE id = $1",
-      [invoice.userid],
-    );
-    const referrerIdMs = referrerCheckMs.rows[0]?.referred_by ?? null;
-    const hasReferralMs = referrerIdMs !== null;
-
-    const msTotalFee = Math.floor(milestoneAmount * TOTAL_FEE_RATE); // 2%
-    const msReferralEarning = hasReferralMs
-      ? Math.floor(milestoneAmount * REFERRAL_FEE_RATE) // 0.5%
-      : 0;
-    const msFonlokNet = msTotalFee - msReferralEarning; // 1.5% or 2%
-    const sellerReceives = milestoneAmount - msTotalFee; // gross − 2%
-    const fonlokFee = msTotalFee; // kept for email label
-
-    console.log(
-      `Milestone ${milestone.id} (${milestone.label}): gross=${milestoneAmount}, ` +
-        `totalFee=${msTotalFee}, fonlokNet=${msFonlokNet}, ` +
-        `referralEarning=${msReferralEarning}, sellerReceives=${sellerReceives}`,
-    );
-
-    // ── Step 7: Transfer to seller via Campay ───────────────────────────────
-    const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-      username: process.env.CAMPAY_USERNAME,
-      password: process.env.CAMPAY_PASSWORD,
-    });
-
-    await axios.post(
-      `${process.env.CAMPAY_BASE_URL}withdraw/`,
-      {
-        amount: sellerReceives.toString(),
-        currency: "XAF",
-        to: seller.phone,
-        description: `Fonlok milestone payout: ${milestone.label} (Invoice ${invoice.invoicenumber})`,
-        external_reference: `milestone-${milestone.id}`,
-      },
-      { headers: { Authorization: `Token ${auth.data.token}` } },
-    );
-
-    // ── Step 8: Record payout ────────────────────────────────────────────────
-    await db.query(
-      "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
-      [
-        invoice.userid,
-        sellerReceives,
-        "Mobile Money",
-        "paid",
-        invoice.id,
-        invoice.invoicenumber,
-      ],
-    );
-
-    notifyUser(
-      invoice.userid,
-      "milestone_released",
-      "Milestone Payout Sent",
-      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
-      {
-        milestoneLabel: milestone.label,
-        amount: sellerReceives,
-        invoiceNumber: invoice.invoicenumber,
-      },
-    );
-
-    // ── Step 9: Credit referral earnings &mdash; INSERT first, balance only if new ─
-    // INSERT with RETURNING is the source of truth.  Balance UPDATE only runs
-    // when a genuinely new row was inserted &mdash; retries never double-credit.
-    if (hasReferralMs && msReferralEarning > 0) {
-      try {
-        const msEarningsInsert = await db.query(
-          `INSERT INTO referral_earnings
-             (referrer_userid, referred_userid, invoice_number, invoice_amount, earned_amount)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (invoice_number) DO NOTHING
-           RETURNING id`,
-          [
-            referrerIdMs,
-            invoice.userid,
-            `${invoice.invoicenumber}-ms${milestone.id}`,
-            milestoneAmount,
-            msReferralEarning,
-          ],
-        );
-        if (msEarningsInsert.rows.length > 0) {
-          await db.query(
-            "UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2",
-            [msReferralEarning, referrerIdMs],
-          );
-          console.log(
-            `✅ Milestone referral earning of ${msReferralEarning} XAF (0.5%) credited to user ${referrerIdMs}. ` +
-              `Fonlok net fee: ${msFonlokNet} XAF (1.5%).`,
-          );
-        } else {
-          console.log(
-            `ℹ️ Milestone referral earnings for ${invoice.invoicenumber}-ms${milestone.id} already recorded &mdash; balance not double-credited.`,
-          );
-        }
-      } catch (referralErr) {
-        console.error(
-          "⚠️ Referral credit error (milestone payout still succeeded):",
-          referralErr.message,
-        );
-      }
-    }
-
-    // ── Step 10: Check if ALL milestones for this invoice are now released ────
-    const remainingResult = await db.query(
-      "SELECT COUNT(*) AS remaining FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released'",
-      [milestone.invoice_id],
-    );
-    const remaining = parseInt(remainingResult.rows[0].remaining);
-
-    if (remaining === 0) {
-      await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [
-        milestone.invoice_id,
-      ]);
-      console.log(
-        `✅ All milestones released &mdash; invoice ${invoice.invoicenumber} marked as completed.`,
-      );
-    }
-
-    // ── Step 11: Email the seller their receipt ───────────────────────────────
-    try {
-      let milestonePdfAttachment = null;
-      try {
-        const pdfBuffer = await generateReceiptPdf(invoice.invoicenumber);
-        milestonePdfAttachment = {
-          content: pdfBuffer.toString("base64"),
-          filename: `fonlok-receipt-${invoice.invoicenumber}.pdf`,
-          type: "application/pdf",
-          disposition: "attachment",
-        };
-      } catch (pdfErr) {
-        console.error(
-          "⚠️ Could not generate milestone receipt PDF:",
-          pdfErr.message,
-        );
-      }
-
-      const msFeeLabel = hasReferralMs
-        ? "Fonlok Fee (1.5%)"
-        : "Fonlok Fee (2%)";
-      const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
-      const sellerMsg = {
-        to: seller.email,
-        from: process.env.VERIFIED_SENDER,
-        subject: `Milestone Payment Released  - ${milestone.label} | Fonlok`,
-        html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
-          <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${invoice.invoicename}</strong> and your payment has been processed.</p>
-          ${emailTable([
-            ["Invoice", invoice.invoicenumber],
-            ["Milestone", milestone.label],
-            ["Gross Amount", `${milestoneAmount} XAF`],
-            [msFeeLabel, `−${fonlokFee} XAF`, "color:#dc2626;"],
-            [
-              "Amount Sent to You",
-              `${sellerReceives} XAF`,
-              "font-weight:700;color:#16a34a;font-size:15px;",
-            ],
-            ["Sent To", seller.phone],
-          ])}
-          ${
-            remaining === 0
-              ? '<p style="color:#16a34a;font-weight:600;margin-top:12px;">All milestones have been released. This invoice is now complete.</p>'
-              : `<p style="color:#475569;margin-top:12px;">Remaining milestones: <strong>${remaining}</strong></p>`
-          }
-          <p style="color:#475569;margin-top:12px;">Your payout receipt is attached to this email as a PDF.</p>
-          ${emailButton(milestoneReceiptLink, "Download PDF Receipt")}`,
-          {
-            footerNote:
-              "Thank you for using Fonlok. This email confirms your milestone payout has been processed. Please keep this receipt for your records.",
-          },
-        ),
-        ...(milestonePdfAttachment
-          ? { attachments: [milestonePdfAttachment] }
-          : {}),
-      };
-      await sgMail.send(sellerMsg);
-      console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
-    } catch (emailErr) {
-      console.error(
-        "❌ Seller milestone receipt email error:",
-        emailErr.message,
-      );
-    }
-
-    // 13. Return a clean success page to the buyer
-    return res.send(
-      renderPage({
-        type: "success",
-        title: "Funds Released",
-        body:
-          `You have successfully released <strong>${sellerReceives} XAF</strong> to the seller for milestone: <strong>${milestone.label}</strong>.` +
-          (remaining === 0
-            ? `<br><br><span style="color:#16a34a;font-weight:600;">All milestones are now complete. This invoice is fully settled.</span>`
-            : `<br><br>The seller will be notified to proceed with the next milestone.`),
-        note: "Thank you for using Fonlok. You can close this page.",
-      }),
-    );
-  } catch (error) {
-    console.error("Milestone release failed:", error.message);
-    return res.status(500).send(
-      renderPage({
-        type: "error",
-        title: "Something Went Wrong",
-        body: "An unexpected error occurred while processing the fund release. No money has been moved.",
-        note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-      }),
-    );
   }
 });
 

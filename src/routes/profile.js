@@ -5,7 +5,12 @@ import authMiddleware from "../middleware/authMiddleware.js";
 import dotenv from "dotenv";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
+import rateLimit from "express-rate-limit";
+import sgMail from "@sendgrid/mail";
+import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
 dotenv.config();
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // GET /profile/user-info/:userid
 // Returns the username for a given user_id so the dashboard can build the profile link
@@ -34,7 +39,7 @@ router.get("/:username", async (req, res) => {
   try {
     // 1. Find the seller by username
     const userResult = await db.query(
-      "SELECT id, name, username, country, profilepicture, createdat, phone, kyc_status FROM users WHERE username = $1",
+      "SELECT id, name, username, country, profilepicture, createdat, phone, kyc_status, preferred_email_language FROM users WHERE username = $1",
       [username],
     );
     if (userResult.rows.length === 0) {
@@ -74,12 +79,28 @@ router.get("/:username", async (req, res) => {
     // 5. Count total completed transactions (delivered invoices)
     const completedCount = invoicesResult.rows.length;
 
+    // 6. Total amount secured via completed/delivered invoices
+    const securedResult = await db.query(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM invoices WHERE userid = $1 AND status IN ('delivered', 'completed')",
+      [seller.id],
+    );
+    const totalSecured = parseFloat(securedResult.rows[0].total) || 0;
+
+    // 7. Number of disputes filed for this seller's invoices
+    const disputeResult = await db.query(
+      "SELECT COUNT(*) AS count FROM disputes WHERE invoicenumber IN (SELECT invoicenumber FROM invoices WHERE userid = $1)",
+      [seller.id],
+    );
+    const disputeCount = parseInt(disputeResult.rows[0].count, 10) || 0;
+
     return res.status(200).json({
       seller,
       completedInvoices: invoicesResult.rows,
       reviews: reviewsResult.rows,
       averageRating,
       completedCount,
+      totalSecured,
+      disputeCount,
     });
   } catch (error) {
     console.log(error.message);
@@ -221,6 +242,102 @@ router.post(
       return res
         .status(500)
         .json({ message: "Failed to submit review. Please try again." });
+    }
+  },
+);
+
+// Public deal-request endpoint limiter: reduce spam and abusive automation.
+const dealRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    type: "rate_limit",
+    message:
+      "Too many deal requests from this device. Please wait before trying again.",
+  },
+});
+
+// POST /profile/deal-request
+// Public endpoint to contact a seller from their profile.
+router.post(
+  "/deal-request",
+  dealRequestLimiter,
+  [
+    body("seller_username")
+      .trim()
+      .notEmpty()
+      .withMessage("Seller username is required.")
+      .matches(/^[a-zA-Z0-9_]+$/)
+      .withMessage("Invalid seller username.")
+      .isLength({ max: 30 }),
+
+    body("sender_name")
+      .trim()
+      .notEmpty()
+      .withMessage("Your name is required.")
+      .isLength({ max: 100 })
+      .withMessage("Name is too long.")
+      .escape(),
+
+    body("sender_email")
+      .trim()
+      .isEmail()
+      .withMessage("A valid email address is required.")
+      .normalizeEmail(),
+
+    body("message")
+      .trim()
+      .notEmpty()
+      .withMessage("A message is required.")
+      .isLength({ min: 10, max: 1000 })
+      .withMessage("Message must be between 10 and 1000 characters.")
+      .escape(),
+  ],
+  validate,
+  async (req, res) => {
+    const { seller_username, sender_name, sender_email, message } = req.body;
+
+    try {
+      const sellerResult = await db.query(
+        "SELECT id, name, email FROM users WHERE username = $1",
+        [seller_username],
+      );
+      if (sellerResult.rows.length === 0) {
+        return res.status(404).json({ message: "Seller not found." });
+      }
+      const seller = sellerResult.rows[0];
+
+      const FRONTEND_URL = process.env.FRONTEND_URL || "https://fonlok.com";
+      const profileUrl = `${FRONTEND_URL.replace(/\/$/, "")}/seller/${seller_username}`;
+
+      await sgMail.send({
+        to: seller.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: `New deal request from ${sender_name} - Fonlok`,
+        html: emailWrap(
+          `<h2 style="font-size:20px;font-weight:800;color:#0f172a;margin:0 0 8px;">You have a new deal request</h2>
+           <p style="color:#334155;margin:0 0 16px;">Someone wants to work with you on Fonlok. Review the details below and create an invoice if interested.</p>
+           ${emailTable([
+             ["Name", sender_name],
+             ["Email", `<a href="mailto:${sender_email}" style="color:#0F1F3D;">${sender_email}</a>`],
+             ["Message", message],
+           ])}
+           <p style="color:#64748b;font-size:13px;margin:0 0 16px;">To continue, create an invoice in your dashboard and share the secure payment link with this buyer.</p>
+           ${emailButton(`${FRONTEND_URL}/dashboard?action=create`, "Create Invoice")}`,
+          {
+            footerNote: `This request came from your public seller profile: ${profileUrl}`,
+          },
+        ),
+      });
+
+      return res.status(201).json({ ok: true });
+    } catch (error) {
+      console.log("deal-request error:", error.message);
+      return res
+        .status(500)
+        .json({ message: "Failed to send deal request. Please try again." });
     }
   },
 );

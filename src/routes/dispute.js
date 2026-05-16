@@ -14,6 +14,8 @@ import {
   emailButton,
   emailButtonDanger,
 } from "../utils/emailTemplate.js";
+import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
+import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -373,22 +375,18 @@ router.post(
       // 13. Email the seller
       if (sellerEmail) {
         const isSellerOpener = opened_by === "seller";
+        const sellerLanguage = await getUserEmailLanguageByEmail(sellerEmail);
+        const sellerDispute = buildEmailCopy(sellerLanguage, "disputeOpened");
         const sellerDisputeMsg = {
           to: sellerEmail,
           from: process.env.VERIFIED_SENDER,
-          subject: isSellerOpener
-            ? `Your Dispute Has Been Filed  - Invoice ${invoicenumber} | Fonlok`
-            : `A Buyer Has Opened a Dispute on Your Invoice | Fonlok`,
+          subject: sellerDispute.sellerSubject(invoicenumber),
           html: emailWrap(
-            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${
-              isSellerOpener
-                ? "Your Dispute Has Been Submitted"
-                : "A Buyer Has Opened a Dispute"
-            }</h2>
+            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${sellerDispute.sellerTitle}</h2>
             <p style="color:#475569;">${
               isSellerOpener
-                ? "We have received your dispute request. Our admin team will review all messages and make a fair decision within <strong>24 -48 hours</strong>."
-                : "A buyer has filed a dispute on one of your invoices. Our admin team has been notified and will review the case within <strong>24 -48 hours</strong>."
+                ? (sellerLanguage === "fr" ? "Nous avons reçu votre demande de litige. Notre équipe d'administration examinera tous les messages et prendra une décision équitable dans <strong>24 à 48 heures</strong>." : "We have received your dispute request. Our admin team will review all messages and make a fair decision within 24-48 hours.")
+                : (sellerLanguage === "fr" ? "Un acheteur a ouvert un litige sur l'une de vos factures. Notre équipe d'administration a été notifiée et examinera le dossier dans <strong>24 à 48 heures</strong>." : "A buyer has filed a dispute on one of your invoices. Our admin team has been notified and will review the case within 24-48 hours.")
             }</p>
             ${emailTable([
               ["Invoice Number", invoicenumber],
@@ -398,15 +396,14 @@ router.post(
                 `${invoice.amount} ${invoice.currency}`,
                 "font-weight:700;font-size:15px;",
               ],
-              ["Opened By", isSellerOpener ? "You (seller)" : "Buyer"],
-              ["Reason", reason],
+              [sellerLanguage === "fr" ? "Ouvert par" : "Opened By", sellerLanguage === "fr" ? "Acheteur" : "Buyer"],
+              [sellerLanguage === "fr" ? "Raison" : "Reason", reason],
             ])}
-            <p style="color:#475569;">You can view the full conversation and track the dispute resolution in the chat thread.</p>
-            ${emailButton(chatLink, "View Dispute Chat")}`,
+            <p style="color:#475569;">${sellerLanguage === "fr" ? "Vous pouvez consulter la conversation complète et suivre la résolution du litige dans le fil de discussion." : "You can view the full conversation and track the dispute resolution in the chat thread."}</p>
+            ${emailButton(chatLink, sellerDispute.button)}`,
             {
-              subtitle: "Dispute Notification",
-              footerNote:
-                "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
+              subtitle: sellerLanguage === "fr" ? "Notification de litige" : "Dispute Notification",
+              footerNote: sellerLanguage === "fr" ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok." : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
             },
           ),
         };
@@ -423,24 +420,16 @@ router.post(
 
       // 14. Email the buyer
       if (buyerEmail) {
+        const buyerLanguage = await getUserEmailLanguageByEmail(buyerEmail);
+        const buyerDispute = buildEmailCopy(buyerLanguage, "disputeOpened");
         const isBuyerOpener = opened_by === "buyer";
         const buyerDisputeMsg = {
           to: buyerEmail,
           from: process.env.VERIFIED_SENDER,
-          subject: isBuyerOpener
-            ? `Your Dispute Has Been Filed  - Invoice ${invoicenumber} | Fonlok`
-            : `A Dispute Has Been Opened on Your Purchase | Fonlok`,
+          subject: buyerDispute.buyerSubject(invoicenumber),
           html: emailWrap(
-            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${
-              isBuyerOpener
-                ? "Your Dispute Has Been Submitted"
-                : "A Dispute Has Been Opened on Your Purchase"
-            }</h2>
-            <p style="color:#475569;">${
-              isBuyerOpener
-                ? "We have received your dispute request. Our admin team will review all messages and make a fair decision within <strong>24 -48 hours</strong>."
-                : "The seller has filed a dispute regarding your purchase. Our admin team has been notified and will review the case within <strong>24 -48 hours</strong>."
-            }</p>
+            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${buyerDispute.buyerTitle}</h2>
+            <p style="color:#475569;">${buyerDispute.buyerBody(invoicenumber)}</p>
             ${emailTable([
               ["Invoice Number", invoicenumber],
               ["Invoice Name", invoice.invoicename],
@@ -449,15 +438,14 @@ router.post(
                 `${invoice.amount} ${invoice.currency}`,
                 "font-weight:700;font-size:15px;",
               ],
-              ["Opened By", isBuyerOpener ? "You (buyer)" : "Seller"],
-              ["Reason", reason],
+              [buyerLanguage === "fr" ? "Ouvert par" : "Opened By", isBuyerOpener ? (buyerLanguage === "fr" ? "Vous (Acheteur)" : "You (buyer)") : (buyerLanguage === "fr" ? "Vendeur" : "Seller")],
+              [buyerLanguage === "fr" ? "Raison" : "Reason", reason],
             ])}
-            <p style="color:#475569;">Your funds are safely held in escrow and will not be released until the dispute is resolved.</p>
-            ${emailButton(invoicePageLink, "View Invoice &amp; Chat")}`,
+            <p style="color:#475569;">${buyerLanguage === "fr" ? "Vos fonds sont en toute sécurité en séquestre et ne seront pas libérés tant que le litige ne sera pas résolu." : "Your funds are safely held in escrow and will not be released until the dispute is resolved."}</p>
+            ${emailButton(invoicePageLink, buyerDispute.button)}`,
             {
-              subtitle: "Dispute Notification",
-              footerNote:
-                "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
+              subtitle: buyerLanguage === "fr" ? "Notification de litige" : "Dispute Notification",
+              footerNote: buyerLanguage === "fr" ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok." : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
             },
           ),
         };

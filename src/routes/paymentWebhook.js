@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
@@ -12,6 +12,8 @@ import {
   emailButtonDanger,
 } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
+import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
+import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 dotenv.config();
 const router = express.Router();
 import sgMail from "@sendgrid/mail";
@@ -149,9 +151,10 @@ export async function processSuccessfulPayment(paymentUUID) {
 
   // 7. Send confirmation email + receipt to buyer
   if (buyerEmail) {
+    const buyerLanguage = await getUserEmailLanguageByEmail(buyerEmail);
     let buyerPdfAttachment = null;
     try {
-      const pdfBuffer = await generateReceiptPdf(invoice_number);
+      const pdfBuffer = await generateReceiptPdf(invoice_number, buyerLanguage);
       buyerPdfAttachment = {
         content: pdfBuffer.toString("base64"),
         filename: `fonlok-receipt-${invoice_number}.pdf`,
@@ -170,10 +173,11 @@ export async function processSuccessfulPayment(paymentUUID) {
 
     if (!isInstallment) {
       // ── Full-payment invoice: single one-shot release link ────────────────
-      buyerEmailSubject = `Payment Confirmed - Invoice ${invoice_number} | Fonlok`;
+      const paymentConfirm = buildEmailCopy(buyerLanguage, "paymentConfirmed");
+      buyerEmailSubject = paymentConfirm.subject(invoice_number);
       buyerEmailHtml = emailWrap(
-        `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payment Confirmed</h2>
-        <p style="color:#475569;">Your payment has been received successfully. Your funds are held securely in escrow and will only be released to the seller once you confirm delivery.</p>
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">${paymentConfirm.simpleTitle}</h2>
+        <p style="color:#475569;">${paymentConfirm.simpleBody}</p>
         ${emailTable([
           ["Invoice Number", invoice_number],
           [
@@ -187,15 +191,14 @@ export async function processSuccessfulPayment(paymentUUID) {
             "color:#16a34a;font-weight:600;",
           ],
         ])}
-        <p style="color:#475569;">Your official payment receipt is attached to this email as a PDF. You can also download it at any time using the button below.</p>
-        ${emailButton(receiptDownloadLink, "Download PDF Receipt")}
-        <h3 style="color:#0F1F3D;margin:20px 0 8px;">Next Step: Confirm Your Delivery</h3>
-        <p style="color:#475569;">Once you have received your item and are satisfied, click the button below to release the funds to the seller:</p>
-        ${emailButton(confirmationLink, "Confirm Receipt &amp; Release Funds")}
-        <p style="color:#475569;margin-top:4px;font-size:14px;">Alternatively, give this release code to the seller: <strong style="font-family:monospace;font-size:17px;letter-spacing:3px;color:#0F1F3D;">${finalCode}</strong></p>`,
+        <p style="color:#475569;">${paymentConfirm.receiptMessage}</p>
+        ${emailButton(receiptDownloadLink, paymentConfirm.downloadButton)}
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">${buyerLanguage === "fr" ? "Prochaine étape : confirmez votre livraison" : "Next Step: Confirm Your Delivery"}</h3>
+        <p style="color:#475569;">${buyerLanguage === "fr" ? "Une fois que vous avez reçu votre article et que vous êtes satisfait, cliquez sur le bouton ci-dessous pour libérer les fonds au vendeur :" : "Once you have received your item and are satisfied, click the button below to release the funds to the seller:"}</p>
+        ${emailButton(confirmationLink, paymentConfirm.confirmButton)}
+        <p style="color:#475569;margin-top:4px;font-size:14px;">${paymentConfirm.codeMessage} <strong style="font-family:monospace;font-size:17px;letter-spacing:3px;color:#0F1F3D;">${finalCode}</strong></p>`,
         {
-          footerNote:
-            "You received this email because a payment was processed on your behalf through Fonlok Escrow. Do not share your confirmation code or link with anyone other than the seller.",
+          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un paiement a été traité en votre nom via Fonlok Escrow. Ne partagez pas votre code de confirmation ou votre lien avec personne d'autre que le vendeur." : "You received this email because a payment was processed on your behalf through Fonlok Escrow. Do not share your confirmation code or link with anyone other than the seller.",
         },
       );
     } else {
@@ -205,45 +208,45 @@ export async function processSuccessfulPayment(paymentUUID) {
         "SELECT milestone_number, label, amount FROM invoice_milestones WHERE invoice_id = $1 ORDER BY milestone_number ASC",
         [invoiceId],
       );
-      buyerEmailSubject = `Payment Confirmed — Milestone Escrow Active | Invoice ${invoice_number} | Fonlok`;
+      const paymentConfirm = buildEmailCopy(buyerLanguage, "paymentConfirmed");
+      buyerEmailSubject = paymentConfirm.subject(invoice_number);
       buyerEmailHtml = emailWrap(
-        `<h2 style="color:#0F1F3D;margin:0 0 12px;">Payment Confirmed &mdash; Milestone Escrow Active</h2>
-        <p style="color:#475569;">Your payment for invoice <strong>${invoice_number}</strong> has been received. Your funds are held securely in escrow and will be released to the seller <strong>one milestone at a time</strong> &mdash; only after you explicitly approve each completed stage of work.</p>
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">${paymentConfirm.milestoneTitle}</h2>
+        <p style="color:#475569;">${paymentConfirm.milestoneBody(invoice_number)}</p>
         ${emailTable([
           ["Invoice Number", invoice_number],
           [
-            "Total in Escrow",
+            buyerLanguage === "fr" ? "Total en séquestre" : "Total in Escrow",
             `${payment.amount} XAF`,
             "font-weight:700;color:#16a34a;font-size:15px;",
           ],
-          ["Payment Type", "Milestone Escrow"],
+          [buyerLanguage === "fr" ? "Type de paiement" : "Payment Type", buyerLanguage === "fr" ? "Séquestre par jalons" : "Milestone Escrow"],
           [
-            "Status",
-            "&#10003;&nbsp;Funds Held in Escrow",
+            buyerLanguage === "fr" ? "Statut" : "Status",
+            buyerLanguage === "fr" ? "&#10003;&nbsp;Fonds conservés en séquestre" : "&#10003;&nbsp;Funds Held in Escrow",
             "color:#16a34a;font-weight:600;",
           ],
         ])}
-        <h3 style="color:#0F1F3D;margin:20px 0 8px;">Your Milestones</h3>
-        <p style="color:#475569;margin-bottom:12px;">The seller will work through each milestone. Once a milestone is marked complete, you will receive a <strong>separate email with a secure one-click release link</strong> for that milestone only. No funds are ever moved without your explicit confirmation.</p>
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">${paymentConfirm.milestoneHeader}</h3>
+        <p style="color:#475569;margin-bottom:12px;">${paymentConfirm.milestoneNote}</p>
         ${emailTable(
           milestonesData.rows.map((m) => [
-            `Milestone ${m.milestone_number}: ${m.label}`,
+            buyerLanguage === "fr" ? `Jalon ${m.milestone_number}: ${m.label}` : `Milestone ${m.milestone_number}: ${m.label}`,
             `${Number(m.amount).toLocaleString()} XAF`,
           ]),
         )}
-        <p style="color:#475569;margin-top:16px;">Your official payment receipt is attached to this email as a PDF.</p>
-        ${emailButton(receiptDownloadLink, "Download PDF Receipt")}
-        <h3 style="color:#0F1F3D;margin:20px 0 8px;">How Milestone Releases Work</h3>
+        <p style="color:#475569;margin-top:16px;">${paymentConfirm.receiptMessage}</p>
+        ${emailButton(receiptDownloadLink, paymentConfirm.downloadButton)}
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">${paymentConfirm.milestoneInstructions}</h3>
         <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
-          <li>The seller completes a milestone and marks it as done.</li>
-          <li>You receive an email with a secure, one-time release link for that milestone only.</li>
-          <li>Click the link to review and confirm &mdash; funds are never released without your explicit approval.</li>
-          <li>Repeat for each subsequent milestone until the work is fully complete.</li>
+          <li>${paymentConfirm.step1}</li>
+          <li>${paymentConfirm.step2}</li>
+          <li>${paymentConfirm.step3}</li>
+          <li>${paymentConfirm.step4}</li>
         </ol>
-        <p style="color:#475569;font-size:13px;">If you have concerns about any milestone, do not release payment. Use the secure chat to communicate with the seller, or open a dispute.</p>`,
+        <p style="color:#475569;font-size:13px;">${paymentConfirm.warning}</p>`,
         {
-          footerNote:
-            "You received this email because a milestone-based escrow payment was processed on your behalf through Fonlok. Each milestone requires your explicit approval before any funds are released to the seller.",
+          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un paiement en séquestre basé sur les jalons a été traité en votre nom via Fonlok. Chaque jalon nécessite votre approbation explicite avant que les fonds ne soient libérés au vendeur." : "You received this email because a milestone-based escrow payment was processed on your behalf through Fonlok. Each milestone requires your explicit approval before any funds are released to the seller.",
         },
       );
     }
@@ -280,20 +283,20 @@ export async function processSuccessfulPayment(paymentUUID) {
   if (buyerEmail) {
     const buyerChatLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}?token=${chatToken}`;
     const buyerDisputeLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}?token=${chatToken}&dispute=true`;
+    const chatCopy = buildEmailCopy(buyerLanguage, "chatInvite");
     const chatInviteMsg = {
       to: buyerEmail,
       from: process.env.VERIFIED_SENDER,
-      subject: `Your Secure Chat Link - Invoice ${invoice_number} | Fonlok`,
+      subject: chatCopy.subject(invoice_number),
       html: emailWrap(
-        `<h2 style="color:#0F1F3D;margin:0 0 12px;">You Can Now Chat with the Seller</h2>
-        <p style="color:#475569;">Your payment for invoice <strong>${invoice_number}</strong> has been confirmed. Use the chat to communicate with the seller, ask questions, or request proof of delivery.</p>
-        ${emailButton(buyerChatLink, "Open Chat")}
-        <h3 style="color:#0F1F3D;margin:20px 0 8px;">Have a Problem with Your Order?</h3>
-        <p style="color:#475569;">If you did not receive what you ordered, or there is an issue with your order, you can open a dispute. A Fonlok admin will review the case and make a fair decision.</p>
-        ${emailButtonDanger(buyerDisputeLink, "Open a Dispute")}`,
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">${chatCopy.title}</h2>
+        <p style="color:#475569;">${chatCopy.body(invoice_number)}</p>
+        ${emailButton(buyerChatLink, chatCopy.chatButton)}
+        <h3 style="color:#0F1F3D;margin:20px 0 8px;">${chatCopy.problemTitle}</h3>
+        <p style="color:#475569;">${chatCopy.problemBody}</p>
+        ${emailButtonDanger(buyerDisputeLink, chatCopy.disputeButton)}`,
         {
-          footerNote:
-            "Keep these links private - they are unique to your order. You received this email because a payment was confirmed on Fonlok.",
+          footerNote: chatCopy.footerNote,
         },
       ),
     };
@@ -327,6 +330,8 @@ export async function processSuccessfulPayment(paymentUUID) {
     );
     if (sellerResult.rows.length > 0) {
       const seller = sellerResult.rows[0];
+      const sellerLanguage = await getUserEmailLanguageByEmail(seller.email);
+      const invoicePaidCopy = buildEmailCopy(sellerLanguage, "invoicePaid");
       const sellerDashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
       const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
       const sellerFirstName = (seller.name || "there").split(" ")[0];
@@ -345,37 +350,36 @@ export async function processSuccessfulPayment(paymentUUID) {
       const sellerMsg = {
         to: seller.email,
         from: process.env.VERIFIED_SENDER,
-        subject: `✅ Invoice Paid — Please Deliver | Invoice ${invoice_number} | Fonlok`,
+        subject: invoicePaidCopy.subject(invoice_number),
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Your Invoice Has Been Paid</h2>
-          <p style="color:#475569;">Hi ${sellerFirstName}, great news! <strong>${buyerName}</strong> has paid your invoice and the funds are now held securely in Fonlok escrow.</p>
-          <p style="color:#475569;margin-bottom:20px;">Your next step is to deliver the goods or service you promised. Once the buyer confirms receipt, the funds will be released directly to you.</p>
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${invoicePaidCopy.title}</h2>
+          <p style="color:#475569;">${invoicePaidCopy.body(buyerName, sellerFirstName)}</p>
+          <p style="color:#475569;margin-bottom:20px;">${sellerLanguage === "fr" ? "Votre prochaine étape est de livrer les biens ou services que vous avez promis. Une fois que l'acheteur confirme la réception, les fonds vous seront libérés directement." : "Your next step is to deliver the goods or service you promised. Once the buyer confirms receipt, the funds will be released directly to you."}</p>
           ${emailTable([
             ["Invoice Number", invoice_number],
             [
-              "Amount in Escrow",
+              sellerLanguage === "fr" ? "Montant en séquestre" : "Amount in Escrow",
               `${payment.amount} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
-            ["Buyer", buyerName],
+            [sellerLanguage === "fr" ? "Acheteur" : "Buyer", buyerName],
             [
-              "Escrow Status",
-              "&#10003;&nbsp;Funds Secured",
+              sellerLanguage === "fr" ? "Statut du séquestre" : "Escrow Status",
+              sellerLanguage === "fr" ? "&#10003;&nbsp;Fonds sécurisés" : "&#10003;&nbsp;Funds Secured",
               "color:#16a34a;font-weight:600;",
             ],
           ])}
-          <h3 style="color:#0F1F3D;margin:24px 0 8px;">What to do now</h3>
+          <h3 style="color:#0F1F3D;margin:24px 0 8px;">${invoicePaidCopy.nextTitle}</h3>
           <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
-            <li>Deliver the product or service you agreed on with the buyer.</li>
-            <li>Use the chat to keep the buyer updated and share proof of delivery.</li>
-            <li>Once the buyer confirms receipt, Fonlok will release your funds immediately.</li>
+            <li>${invoicePaidCopy.nextStep1}</li>
+            <li>${invoicePaidCopy.nextStep2}</li>
+            <li>${invoicePaidCopy.nextStep3}</li>
           </ol>
-          ${emailButton(sellerChatLink, "Open Chat with Buyer")}
-          ${emailButton(sellerDashboardLink, "Go to Dashboard")}
-          <p style="color:#94a3b8;font-size:13px;margin-top:20px;">The funds will remain in escrow until the buyer confirms delivery. If there is a problem, either party may open a dispute and Fonlok will mediate fairly.</p>`,
+          ${emailButton(sellerChatLink, invoicePaidCopy.button)}
+          ${emailButton(sellerDashboardLink, sellerLanguage === "fr" ? "Aller au tableau de bord" : "Go to Dashboard")}
+          <p style="color:#94a3b8;font-size:13px;margin-top:20px;">${invoicePaidCopy.footer}</p>`,
           {
-            footerNote:
-              "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
+            footerNote: sellerLanguage === "fr" ? "Vous avez reçu cet e-mail parce que l'une de vos factures Fonlok a été payée. Ne partagez vos identifiants de compte avec personne." : "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
           },
         ),
       };

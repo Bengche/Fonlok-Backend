@@ -29,7 +29,149 @@ function drawRight(page, text, { rx, y, size, font, color }) {
   page.drawText(text, { x: rx - w, y, size, font, color });
 }
 
-export async function generateReceiptPdf(invoice_number) {
+function normalizePdfLocale(locale) {
+  return String(locale || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+}
+
+const PDF_COPY = {
+  en: {
+    brandTagline: "Secure Escrow Payments",
+    officialReceipt: "OFFICIAL PAYMENT RECEIPT",
+    officialStatement: "TRANSACTION STATEMENT",
+    receiptTitleFallback: "Payment Receipt",
+    receiptNo: "Receipt No:",
+    issued: "Issued:",
+    paid: "Paid:",
+    fromSeller: "FROM — SELLER",
+    toBuyer: "TO — BUYER",
+    totalAmountPaid: "TOTAL AMOUNT PAID",
+    paymentType: "Payment Type",
+    installmentMilestones: "Installment / Milestones",
+    oneTime: "One-Time",
+    description: "Description",
+    currency: "Currency",
+    invoiceStatus: "Invoice Status",
+    expires: "Expires / Expired",
+    milestoneBreakdown: "Milestone Breakdown",
+    receiptVerification: "RECEIPT VERIFICATION",
+    invoiceNo: "Invoice No:",
+    verifyCode: "Verify Code:",
+    verifyAt: "Enter at",
+    footerReceipt:
+      "Official payment receipt issued by Fonlok — Secure Escrow Payments for digital services.",
+    footerReceipt2:
+      "This document is cryptographically signed and does not require a physical signature.",
+    footerStatement:
+      "Official transaction statement issued by Fonlok — Secure Escrow Payments for digital services.",
+    footerStatement2:
+      "For account verification and dispute resolution.",
+    statementTitle: "Account Transaction Statement",
+    account: "Account:",
+    email: "Email:",
+    totalAmount: "Total Amount",
+    transactions: "Transactions",
+    successful: "Successful",
+    transactionDetails: "Transaction Details",
+    date: "Date",
+    descriptionCol: "Description",
+    amount: "Amount",
+    status: "Status",
+    transactionFallback: "Transaction",
+    payoutReceived: "Payout received",
+    pending: "Pending",
+    released: "Released",
+    completed: "Completed",
+    delivered: "Delivered",
+    paid: "Paid",
+    success: "Success",
+    failed: "Failed",
+    moreTransactions: "... and",
+    moreTransactionsTail: "more transactions",
+    verified: "VERIFIED",
+    secureEscrow: "SECURE ESCROW",
+    statusText: (status) =>
+      ({
+        paid: "Paid",
+        delivered: "Delivered",
+        completed: "Completed",
+        pending: "Pending",
+        released: "Released",
+        success: "Success",
+        failed: "Failed",
+      })[status] || status.charAt(0).toUpperCase() + status.slice(1),
+  },
+  fr: {
+    brandTagline: "Paiements sécurisés par séquestre",
+    officialReceipt: "REÇU DE PAIEMENT OFFICIEL",
+    officialStatement: "RELEVÉ DE TRANSACTIONS",
+    receiptTitleFallback: "Reçu de paiement",
+    receiptNo: "N° de reçu :",
+    issued: "Émis le :",
+    paid: "Payé le :",
+    fromSeller: "DE — VENDEUR",
+    toBuyer: "À — ACHETEUR",
+    totalAmountPaid: "MONTANT TOTAL PAYÉ",
+    paymentType: "Type de paiement",
+    installmentMilestones: "Versement / Jalons",
+    oneTime: "Unique",
+    description: "Description",
+    currency: "Devise",
+    invoiceStatus: "Statut de la facture",
+    expires: "Expire / Expiré",
+    milestoneBreakdown: "Répartition des jalons",
+    receiptVerification: "VÉRIFICATION DU REÇU",
+    invoiceNo: "N° de facture :",
+    verifyCode: "Code de vérification :",
+    verifyAt: "Saisir sur",
+    footerReceipt:
+      "Reçu de paiement officiel émis par Fonlok — Paiements sécurisés par séquestre pour les services numériques.",
+    footerReceipt2:
+      "Ce document est signé cryptographiquement et ne nécessite pas de signature physique.",
+    footerStatement:
+      "Relevé de transactions officiel émis par Fonlok — Paiements sécurisés par séquestre pour les services numériques.",
+    footerStatement2:
+      "Pour la vérification du compte et la résolution des litiges.",
+    statementTitle: "Relevé de transactions du compte",
+    account: "Compte :",
+    email: "E-mail :",
+    totalAmount: "Montant total",
+    transactions: "Transactions",
+    successful: "Réussies",
+    transactionDetails: "Détails des transactions",
+    date: "Date",
+    descriptionCol: "Description",
+    amount: "Montant",
+    status: "Statut",
+    transactionFallback: "Transaction",
+    payoutReceived: "Paiement reçu",
+    pending: "En attente",
+    released: "Libéré",
+    completed: "Terminé",
+    delivered: "Livré",
+    paid: "Payé",
+    success: "Réussie",
+    failed: "Échouée",
+    moreTransactions: "... et",
+    moreTransactionsTail: "transactions supplémentaires",
+    verified: "VÉRIFIÉ",
+    secureEscrow: "SÉQUESTRE SÉCURISÉ",
+    statusText: (status) =>
+      ({
+        paid: "Payé",
+        delivered: "Livré",
+        completed: "Terminé",
+        pending: "En attente",
+        released: "Libéré",
+        success: "Réussie",
+        failed: "Échouée",
+      })[status] || status.charAt(0).toUpperCase() + status.slice(1),
+  },
+};
+
+export async function generateReceiptPdf(invoice_number, locale = "en") {
+  const pdfLocale = normalizePdfLocale(locale);
+  const copy = PDF_COPY[pdfLocale];
+  const dateLocale = pdfLocale === "fr" ? "fr-FR" : "en-GB";
   // ── 1. Invoice + seller ────────────────────────────────────────────────────
   const invResult = await db.query(
     `SELECT i.*, u.name AS seller_name, u.username AS seller_username,
@@ -144,7 +286,7 @@ export async function generateReceiptPdf(invoice_number) {
     font: bold,
     color: amber,
   });
-  page.drawText("Secure Escrow Payments", {
+  page.drawText(copy.brandTagline, {
     x: wordmarkX,
     y: height - headerH + (headerH - 20) / 2 - 2,
     size: 8.5,
@@ -153,7 +295,7 @@ export async function generateReceiptPdf(invoice_number) {
   });
 
   // Right side: "OFFICIAL PAYMENT RECEIPT" + "fonlok.com" right-aligned
-  drawRight(page, "OFFICIAL PAYMENT RECEIPT", {
+  drawRight(page, copy.officialReceipt, {
     rx: width - margin,
     y: height - headerH + (headerH - 10) / 2 + 14,
     size: 11,
@@ -173,7 +315,7 @@ export async function generateReceiptPdf(invoice_number) {
   // ═══════════════════════════════════════════════════════════════════════════
   const titleY = height - headerH - 36;
 
-  page.drawText(inv.invoicename || "Payment Receipt", {
+  page.drawText(inv.invoicename || copy.receiptTitleFallback, {
     x: margin,
     y: titleY,
     size: 17,
@@ -182,7 +324,7 @@ export async function generateReceiptPdf(invoice_number) {
   });
 
   // Receipt No right-aligned
-  drawRight(page, `Receipt No:  ${invoice_number}`, {
+  drawRight(page, `${copy.receiptNo}  ${invoice_number}`, {
     rx: width - margin,
     y: titleY,
     size: 9,
@@ -191,21 +333,21 @@ export async function generateReceiptPdf(invoice_number) {
   });
 
   const issuedDate = inv.createdat
-    ? new Date(inv.createdat).toLocaleDateString("en-GB", {
+    ? new Date(inv.createdat).toLocaleDateString(dateLocale, {
         day: "2-digit",
         month: "long",
         year: "numeric",
       })
     : "—";
   const paidDate = inv.paid_at
-    ? new Date(inv.paid_at).toLocaleDateString("en-GB", {
+    ? new Date(inv.paid_at).toLocaleDateString(dateLocale, {
         day: "2-digit",
         month: "long",
         year: "numeric",
       })
     : "—";
 
-  page.drawText(`Issued: ${issuedDate}`, {
+  page.drawText(`${copy.issued} ${issuedDate}`, {
     x: margin,
     y: titleY - 16,
     size: 8.5,
@@ -213,7 +355,7 @@ export async function generateReceiptPdf(invoice_number) {
     color: mutedText,
   });
 
-  drawRight(page, `Paid: ${paidDate}`, {
+  drawRight(page, `${copy.paid} ${paidDate}`, {
     rx: width - margin,
     y: titleY - 16,
     size: 8.5,
@@ -300,7 +442,7 @@ export async function generateReceiptPdf(invoice_number) {
 
   drawPartyBox(
     margin,
-    "FROM — SELLER",
+    copy.fromSeller,
     inv.seller_name || "—",
     inv.seller_username ? `@${inv.seller_username}` : null,
     inv.seller_phone ? `+${inv.seller_phone}` : null,
@@ -309,7 +451,7 @@ export async function generateReceiptPdf(invoice_number) {
 
   drawPartyBox(
     margin + colW + 12,
-    "TO — BUYER",
+    copy.toBuyer,
     buyerName || buyerEmail || "—",
     buyerName ? buyerEmail : null, // show email as sub-line only if we already showed a name
     buyerPhone,
@@ -331,7 +473,7 @@ export async function generateReceiptPdf(invoice_number) {
   });
 
   // Label + amount left side
-  page.drawText("TOTAL AMOUNT PAID", {
+  page.drawText(copy.totalAmountPaid, {
     x: margin + 14,
     y: amtBarY + amtBarH - 14,
     size: 7.5,
@@ -347,7 +489,7 @@ export async function generateReceiptPdf(invoice_number) {
   });
 
   // Status pill right side — centred vertically in bar
-  const statusLabel = inv.status.toUpperCase();
+  const statusLabel = copy.statusText(inv.status).toUpperCase();
   const pillW = bold.widthOfTextAtSize(statusLabel, 9) + 20;
   const pillX = width - margin - pillW - 4;
   const pillY = amtBarY + (amtBarH - 18) / 2;
@@ -375,22 +517,22 @@ export async function generateReceiptPdf(invoice_number) {
   const labelColW = 160;
   const rows = [
     [
-      "Payment Type",
+      copy.paymentType,
       inv.payment_type === "installment"
-        ? "Installment / Milestones"
-        : "One-Time",
+        ? copy.installmentMilestones
+        : copy.oneTime,
     ],
-    ["Description", (inv.description || "—").substring(0, 78)],
-    ["Currency", inv.currency],
+    [copy.description, (inv.description || "—").substring(0, 78)],
+    [copy.currency, inv.currency],
     [
-      "Invoice Status",
-      inv.status.charAt(0).toUpperCase() + inv.status.slice(1),
+      copy.invoiceStatus,
+      copy.statusText(inv.status),
     ],
   ];
   if (inv.expires_at)
     rows.push([
-      "Expires / Expired",
-      new Date(inv.expires_at).toLocaleDateString("en-GB"),
+      copy.expires,
+      new Date(inv.expires_at).toLocaleDateString(dateLocale),
     ]);
 
   rows.forEach(([label, val], i) => {
@@ -426,7 +568,7 @@ export async function generateReceiptPdf(invoice_number) {
   let cursorY = tableY - rows.length * rowH - 24;
 
   if (milestones.length > 0) {
-    page.drawText("Milestone Breakdown", {
+    page.drawText(copy.milestoneBreakdown, {
       x: margin,
       y: cursorY,
       size: 10,
@@ -446,9 +588,9 @@ export async function generateReceiptPdf(invoice_number) {
     });
     for (const [text, cx] of [
       ["#", margin + 18],
-      ["Label", margin + 70],
-      ["Amount", margin + 320],
-      ["Status", margin + 430],
+      [copy.descriptionCol, margin + 70],
+      [copy.amount, margin + 320],
+      [copy.status, margin + 430],
     ]) {
       drawCentred(page, text, {
         cx,
@@ -490,7 +632,7 @@ export async function generateReceiptPdf(invoice_number) {
         font: regular,
         color: darkText,
       });
-      page.drawText(ms.status || "—", {
+      page.drawText(copy.statusText(ms.status || "—"), {
         x: margin + 415,
         y: cursorY + 5,
         size: 8,
@@ -615,7 +757,7 @@ export async function generateReceiptPdf(invoice_number) {
     borderRadius: 5,
   });
 
-  page.drawText("RECEIPT VERIFICATION", {
+  page.drawText(copy.receiptVerification, {
     x: vbX + 12,
     y: vbY + vbH - 15,
     size: 7,
@@ -628,14 +770,14 @@ export async function generateReceiptPdf(invoice_number) {
     thickness: 0.4,
     color: navy,
   });
-  page.drawText(`Invoice No:   ${invoice_number}`, {
+  page.drawText(`${copy.invoiceNo}   ${invoice_number}`, {
     x: vbX + 12,
     y: vbY + vbH - 31,
     size: 8,
     font: regular,
     color: darkText,
   });
-  page.drawText(`Verify Code:  ${codeFormatted}`, {
+  page.drawText(`${copy.verifyCode}  ${codeFormatted}`, {
     x: vbX + 12,
     y: vbY + vbH - 44,
     size: 8.5,
@@ -643,7 +785,7 @@ export async function generateReceiptPdf(invoice_number) {
     color: navy,
   });
   page.drawText(
-    `Enter at  ${BRAND.domain}/verify  to confirm this receipt is authentic and unaltered.`,
+    `${copy.verifyAt}  ${BRAND.domain}/verify  ${pdfLocale === "fr" ? "pour confirmer que ce reçu est authentique et non modifié." : "to confirm this receipt is authentic and unaltered."}`,
     {
       x: vbX + 12,
       y: vbY + 8,
@@ -662,7 +804,7 @@ export async function generateReceiptPdf(invoice_number) {
 
   drawCentred(
     page,
-    "Official payment receipt issued by Fonlok — Secure Escrow Payments for digital services.",
+    copy.footerReceipt,
     {
       cx: width / 2,
       y: 58,
@@ -673,7 +815,7 @@ export async function generateReceiptPdf(invoice_number) {
   );
   drawCentred(
     page,
-    `This document is cryptographically signed and does not require a physical signature.  |  ${BRAND.domain}`,
+    `${copy.footerReceipt2}  |  ${BRAND.domain}`,
     {
       cx: width / 2,
       y: 44,
@@ -682,13 +824,17 @@ export async function generateReceiptPdf(invoice_number) {
       color: rgb(0.55, 0.63, 0.76),
     },
   );
-  drawCentred(page, `Generated: ${new Date().toUTCString()}`, {
+  drawCentred(
+    page,
+    `${pdfLocale === "fr" ? "Généré" : "Generated"}: ${new Date().toUTCString()}`,
+    {
     cx: width / 2,
     y: 28,
     size: 6.5,
     font: regular,
     color: rgb(0.5, 0.58, 0.72),
-  });
+    },
+  );
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
@@ -703,7 +849,10 @@ export async function generateReceiptPdf(invoice_number) {
  * Used by:
  *  - GET /transactions/statement  (download endpoint)
  */
-export async function generateStatementPdf(userId, startDate, endDate) {
+export async function generateStatementPdf(userId, startDate, endDate, locale = "en") {
+  const pdfLocale = normalizePdfLocale(locale);
+  const copy = PDF_COPY[pdfLocale];
+  const dateLocale = pdfLocale === "fr" ? "fr-FR" : "en-GB";
   // ── Fetch transactions for the date range ──────────────────────────────────
   const txResult = await db.query(
     `SELECT id, amount, currency, status, createdat, invoicename, invoicenumber
@@ -816,7 +965,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     font: bold,
     color: amber,
   });
-  page.drawText("Secure Escrow Payments", {
+  page.drawText(copy.brandTagline, {
     x: wordmarkX,
     y: height - headerH + (headerH - 20) / 2 - 2,
     size: 8.5,
@@ -825,7 +974,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   });
 
   // Right side: "TRANSACTION STATEMENT" + domain
-  drawRight(page, "TRANSACTION STATEMENT", {
+  drawRight(page, copy.officialStatement, {
     rx: width - margin,
     y: height - headerH + (headerH - 10) / 2 + 14,
     size: 11,
@@ -845,7 +994,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   // ═══════════════════════════════════════════════════════════════════════════
   const titleY = height - headerH - 36;
 
-  page.drawText("Account Transaction Statement", {
+  page.drawText(copy.statementTitle, {
     x: margin,
     y: titleY,
     size: 17,
@@ -854,12 +1003,12 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   });
 
   // Period on the right
-  const startFormatted = new Date(startDate).toLocaleDateString("en-GB", {
+  const startFormatted = new Date(startDate).toLocaleDateString(dateLocale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const endFormatted = new Date(endDate).toLocaleDateString("en-GB", {
+  const endFormatted = new Date(endDate).toLocaleDateString(dateLocale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -873,7 +1022,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   });
 
   // Account info below
-  page.drawText(`Account: ${user.name} (@${user.username})`, {
+  page.drawText(`${copy.account} ${user.name} (@${user.username})`, {
     x: margin,
     y: titleY - 16,
     size: 8.5,
@@ -881,7 +1030,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     color: mutedText,
   });
 
-  drawRight(page, `Email: ${user.email || "—"}`, {
+  drawRight(page, `${copy.email} ${user.email || "—"}`, {
     rx: width - margin,
     y: titleY - 16,
     size: 8.5,
@@ -938,16 +1087,16 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     });
   }
 
-  drawStatBox(margin, "Total Amount", totalAmount, " XAF");
-  drawStatBox(margin + statBoxW + 6, "Transactions", transactions.length, "");
-  drawStatBox(margin + statBoxW * 2 + 12, "Successful", successCount, "");
+  drawStatBox(margin, copy.totalAmount, totalAmount, " XAF");
+  drawStatBox(margin + statBoxW + 6, copy.transactions, transactions.length, "");
+  drawStatBox(margin + statBoxW * 2 + 12, copy.successful, successCount, "");
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ── TRANSACTIONS TABLE ─────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
   let cursorY = statsY - 70;
 
-  page.drawText("Transaction Details", {
+  page.drawText(copy.transactionDetails, {
     x: margin,
     y: cursorY,
     size: 10,
@@ -968,10 +1117,10 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   });
 
   const colPositions = [
-    { label: "Date", cx: margin + 60 },
-    { label: "Description", cx: margin + 200 },
-    { label: "Amount", cx: margin + 380 },
-    { label: "Status", cx: margin + 480 },
+    { label: copy.date, cx: margin + 60 },
+    { label: copy.descriptionCol, cx: margin + 200 },
+    { label: copy.amount, cx: margin + 380 },
+    { label: copy.status, cx: margin + 480 },
   ];
 
   colPositions.forEach(({ label, cx }) => {
@@ -1005,7 +1154,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
       });
     }
 
-    const txDate = new Date(tx.createdat).toLocaleDateString("en-GB", {
+    const txDate = new Date(tx.createdat).toLocaleDateString(dateLocale, {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -1020,9 +1169,9 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     });
 
     const desc = (
-      tx.invoicename ||
-      tx.invoicenumber ||
-      "Transaction"
+      tx.invoicename === "Payout received"
+        ? copy.payoutReceived
+        : tx.invoicename || tx.invoicenumber || copy.transactionFallback
     ).substring(0, 25);
     page.drawText(desc, {
       x: margin + 125,
@@ -1041,7 +1190,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
     });
 
     const statusLabel =
-      (tx.status || "Pending").charAt(0).toUpperCase() + tx.status.slice(1);
+      copy.statusText(tx.status || "pending");
     const statusColor =
       tx.status === "success" || tx.status === "paid" ? green : mutedText;
     page.drawText(statusLabel, {
@@ -1056,13 +1205,16 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   });
 
   if (transactions.length > 20) {
-    page.drawText(`... and ${transactions.length - 20} more transactions`, {
+    page.drawText(
+      `${copy.moreTransactions} ${transactions.length - 20} ${copy.moreTransactionsTail}`,
+      {
       x: margin + 10,
       y: cursorY - 10,
       size: 7.5,
       font: regular,
       color: mutedText,
-    });
+      },
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1134,7 +1286,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
 
   drawCentred(
     page,
-    "Official transaction statement issued by Fonlok — Secure Escrow Payments for digital services.",
+    copy.footerStatement,
     {
       cx: width / 2,
       y: 58,
@@ -1145,7 +1297,7 @@ export async function generateStatementPdf(userId, startDate, endDate) {
   );
   drawCentred(
     page,
-    `For account verification and dispute resolution.  |  ${BRAND.domain}`,
+    `${copy.footerStatement2}  |  ${BRAND.domain}`,
     {
       cx: width / 2,
       y: 44,

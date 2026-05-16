@@ -41,6 +41,12 @@ db.query(
   console.error("⚠️  onboarding_dismissed migration error:", e.message),
 );
 
+db.query(
+  "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_email_language VARCHAR(5) NOT NULL DEFAULT 'en'",
+).catch((e) =>
+  console.error("⚠️  preferred_email_language migration error:", e.message),
+);
+
 // ── Multer — profile picture uploads (memory storage → Cloudinary) ──────────
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -213,6 +219,42 @@ router.patch(
       return res
         .status(500)
         .json({ message: "Failed to update phone number." });
+    }
+  },
+);
++
+// ── PATCH /user/update-email-language ───────────────────────────────────────
+router.patch(
+  "/update-email-language",
+  authMiddleware,
+  [
+    body("preferred_email_language")
+      .trim()
+      .notEmpty()
+      .isIn(["en", "fr"])
+      .withMessage("Language must be English or French."),
+  ],
+  validate,
+  async (req, res) => {
+    const userId = req.user.id;
+    const { preferred_email_language } = req.body;
+    try {
+      const result = await db.query(
+        "UPDATE users SET preferred_email_language = $1 WHERE id = $2 RETURNING preferred_email_language",
+        [preferred_email_language, userId],
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "User not found." });
+      }
+      return res.status(200).json({
+        ok: true,
+        preferred_email_language: result.rows[0].preferred_email_language,
+      });
+    } catch (err) {
+      console.error(err.message);
+      return res
+        .status(500)
+        .json({ message: "Failed to update email language." });
     }
   },
 );
@@ -417,9 +459,10 @@ router.get("/onboarding-checklist", authMiddleware, async (req, res) => {
         "SELECT profilepicture, kyc_status, onboarding_dismissed FROM users WHERE id = $1",
         [userId],
       ),
-      db.query("SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1", [
-        userId,
-      ]),
+      db.query(
+        "SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1",
+        [userId],
+      ),
       db.query(
         "SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1 AND viewed_at IS NOT NULL",
         [userId],
@@ -478,50 +521,31 @@ router.get("/onboarding-checklist", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /user/onboarding-checklist/dismiss — allow dismiss only after completion
-router.post("/onboarding-checklist/dismiss", authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.id;
+// POST /user/onboarding-checklist/dismiss — persist one-time dismissal
+router.post(
+  "/onboarding-checklist/dismiss",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
 
-    const [userResult, invoiceResult, viewedResult] = await Promise.all([
-      db.query("SELECT profilepicture, kyc_status FROM users WHERE id = $1", [
-        userId,
-      ]),
-      db.query("SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1", [
-        userId,
-      ]),
-      db.query(
-        "SELECT COUNT(*)::int AS count FROM invoices WHERE userid = $1 AND viewed_at IS NOT NULL",
+      const result = await db.query(
+        "UPDATE users SET onboarding_dismissed = true WHERE id = $1 RETURNING id",
         [userId],
-      ),
-    ]);
+      );
 
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ message: "User not found." });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "User not found." });
+      }
+
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error(err.message);
+      return res
+        .status(500)
+        .json({ message: "Failed to dismiss onboarding checklist." });
     }
-
-    const user = userResult.rows[0];
-    const hasProfilePhoto = Boolean(user.profilepicture);
-    const hasCreatedInvoice = Number(invoiceResult.rows[0]?.count || 0) > 0;
-    const hasInvitedClient = Number(viewedResult.rows[0]?.count || 0) > 0;
-    const hasCompletedKyc = user.kyc_status === "approved";
-
-    if (!(hasProfilePhoto && hasCreatedInvoice && hasInvitedClient && hasCompletedKyc)) {
-      return res.status(400).json({
-        message: "You can dismiss onboarding only after all steps are completed.",
-      });
-    }
-
-    await db.query("UPDATE users SET onboarding_dismissed = true WHERE id = $1", [
-      userId,
-    ]);
-    return res.status(200).json({ ok: true });
-  } catch (err) {
-    console.error(err.message);
-    return res
-      .status(500)
-      .json({ message: "Failed to dismiss onboarding checklist." });
-  }
-});
+  },
+);
 
 export default router;

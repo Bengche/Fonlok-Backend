@@ -16,6 +16,8 @@ import {
   emailButtonDanger,
 } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
+import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
+import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -624,13 +626,15 @@ router.patch("/mark-delivered/:id", async (req, res) => {
     const buyerEmail = guestCheck.rows[0].email;
 
     // 5. Send email to the buyer informing them the seller has marked the order as delivered
+    const buyerLanguage = await getUserEmailLanguageByEmail(buyerEmail);
+    const deliveryCopy = buildEmailCopy(buyerLanguage, "deliveryNotification");
     const deliveryNotificationMsg = {
       to: buyerEmail,
       from: process.env.VERIFIED_SENDER,
-      subject: `Action Required: Confirm Your Delivery  - Invoice ${invoice.invoicenumber} | Fonlok`,
+      subject: deliveryCopy.subject(invoice.invoicename),
       html: emailWrap(
-        `<h2 style="color:#0F1F3D;margin:0 0 12px;">Action Required &mdash; Your Order Has Been Delivered</h2>
-        <p style="color:#475569;">The seller has marked the following invoice as <strong>delivered</strong>. Please check that you have received everything before releasing the funds.</p>
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">${deliveryCopy.title}</h2>
+        <p style="color:#475569;">${deliveryCopy.body(invoice.seller_name || invoice.seller_email)}</p>
         ${emailTable([
           ["Invoice Number", invoice.invoicenumber],
           ["Invoice Name", invoice.invoicename],
@@ -640,11 +644,9 @@ router.patch("/mark-delivered/:id", async (req, res) => {
             "font-weight:700;color:#16a34a;font-size:15px;",
           ],
         ])}
-        <p style="color:#475569;"><strong>Satisfied with your order?</strong> Log in and release the funds to the seller.</p>
-        <p style="color:#dc2626;font-weight:600;">If you have NOT received your order, do not release the funds and contact the seller immediately.</p>`,
+        ${emailButton(`${process.env.FRONTEND_URL}/invoice/${invoice.invoicenumber}`, deliveryCopy.button)}`,
         {
-          footerNote:
-            "You received this email because a seller marked their invoice as delivered on Fonlok Escrow.",
+          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un vendeur a marqué sa facture comme livrée sur Fonlok Escrow." : "You received this email because a seller marked their invoice as delivered on Fonlok Escrow.",
         },
       ),
     };
@@ -1061,10 +1063,11 @@ router.post(
 // Download a professional PDF receipt (accessible by both seller and buyer)
 router.get("/receipt/:invoice_number", async (req, res) => {
   const { invoice_number } = req.params;
+  const locale = String(req.query.lang || "en");
 
   try {
     // Use the shared PDF utility (utils/generateReceipt.js)
-    const pdfBuffer = await generateReceiptPdf(invoice_number);
+    const pdfBuffer = await generateReceiptPdf(invoice_number, locale);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",

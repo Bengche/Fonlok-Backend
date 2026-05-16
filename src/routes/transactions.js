@@ -72,7 +72,7 @@ router.get("/history/:userid", async (req, res) => {
 router.get("/statement", authMiddleware, async (req, res) => {
   try {
     const userId = req.user_id;
-    const { start_date, end_date } = req.query;
+    const { start_date, end_date, lang } = req.query;
 
     if (!start_date || !end_date) {
       return res.status(400).json({
@@ -89,7 +89,12 @@ router.get("/statement", authMiddleware, async (req, res) => {
       });
     }
 
-    const pdfBuffer = await generateStatementPdf(userId, startDate, endDate);
+    const pdfBuffer = await generateStatementPdf(
+      userId,
+      startDate,
+      endDate,
+      lang,
+    );
 
     const fileName = `fonlok-statement-${startDate.toISOString().split("T")[0]}-${endDate.toISOString().split("T")[0]}.pdf`;
 

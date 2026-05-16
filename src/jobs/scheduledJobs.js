@@ -22,7 +22,13 @@
 import cron from "node-cron";
 import sgMail from "@sendgrid/mail";
 import db from "../controllers/db.js";
-import { emailWrap, emailTable, emailButtonNavy } from "../utils/emailTemplate.js";
+import {
+  emailWrap,
+  emailTable,
+  emailButtonNavy,
+} from "../utils/emailTemplate.js";
+import { buildEmailCopy, interpolateEmailCopy } from "../utils/emailLanguageCopy.js";
+import { getUserEmailLanguageById } from "../utils/userLanguage.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -516,26 +522,32 @@ async function runWeeklyDigest() {
         const totalReceived = Number(received.rows[0]?.total || 0);
         const pendingCount = Number(pendingMilestones.rows[0]?.count || 0);
 
+        const userLanguage = await getUserEmailLanguageById(user.id);
+        const digestCopy = buildEmailCopy(userLanguage, "weeklyDigest");
         const body = `
-          <h2 style="margin:0 0 10px;color:#0f172a;">Your weekly Fonlok digest</h2>
+          <h2 style="margin:0 0 10px;color:#0f172a;">${digestCopy.title}</h2>
           <p style="margin:0 0 14px;color:#475569;line-height:1.6;">
-            Hello ${user.name || "there"}, here is your activity summary for the last 7 days.
+            ${userLanguage === "fr" ? "Bonjour" : "Hello"} ${user.name || (userLanguage === "fr" ? "vous" : "there")}, ${userLanguage === "fr" ? "voici un résumé de votre activité au cours des 7 derniers jours" : "here is your activity summary for the last 7 days"}.
           </p>
           ${emailTable([
-            ["Invoices paid", `${invoicesPaid}`],
-            ["Funds received", `${totalReceived.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
-            ["Pending milestones", `${pendingCount}`],
+            [digestCopy.invoicesPaid, `${invoicesPaid}`],
+            [
+              digestCopy.fundsReceived,
+              `${totalReceived.toLocaleString()} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
+            [digestCopy.pendingMilestones, `${pendingCount}`],
           ])}
-          ${emailButtonNavy(`${process.env.FRONTEND_URL}/dashboard?tab=stats`, "Open Revenue & Stats")}
+          ${emailButtonNavy(`${process.env.FRONTEND_URL}/dashboard?tab=stats`, digestCopy.button)}
           <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">
-            Keep momentum: mark completed milestones promptly and share invoice links early to reduce payout delays.
+            ${userLanguage === "fr" ? "Maintenez l'élan : marquez les jalons terminés rapidement et partagez les liens de facture tôt pour réduire les délais de versement" : "Keep momentum: mark completed milestones promptly and share invoice links early to reduce payout delays"}.
           </p>
         `;
 
         await sgMail.send({
           to: user.email,
           from: process.env.VERIFIED_SENDER,
-          subject: `Your weekly Fonlok digest • ${invoicesPaid} paid · ${totalReceived.toLocaleString()} XAF received`,
+          subject: digestCopy.subject,
           html: emailWrap(body, {
             subtitle: "Weekly Performance Summary",
             footerNote:
