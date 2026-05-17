@@ -19,6 +19,15 @@ const COPY = {
       changedWarning:
         'If you did not make this change, contact us immediately at <a href="mailto:${sender}" style="color:#dc2626;">${sender}</a>.',
     },
+    loginOtp: {
+      subject: "Your Fonlok Sign-In Code",
+      title: "Your one-time sign-in code",
+      body: (name) =>
+        `Hi ${name}, we received a password sign-in for your Fonlok account. Enter the code below to finish signing in. This code expires in <strong>10 minutes</strong>.`,
+      codeLabel: "One-time code",
+      footer:
+        "If you did not try to sign in, you can ignore this email and your account will remain secure.",
+    },
     deliveryNotification: {
       subject: (invoiceName) => `Please Confirm Delivery: ${invoiceName}`,
       title: "Ready to Confirm Delivery?",
@@ -146,6 +155,15 @@ const COPY = {
         `Bonjour ${name}, le mot de passe de votre compte Fonlok a été modifié avec succès. Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.`,
       changedWarning:
         'Si vous n\'êtes pas à l\'origine de ce changement, contactez-nous immédiatement à <a href="mailto:${sender}" style="color:#dc2626;">${sender}</a>.',
+    },
+    loginOtp: {
+      subject: "Votre code de connexion Fonlok",
+      title: "Votre code de connexion à usage unique",
+      body: (name) =>
+        `Bonjour ${name}, une connexion par mot de passe a été demandée pour votre compte Fonlok. Saisissez le code ci-dessous pour terminer la connexion. Ce code expire dans <strong>10 minutes</strong>.`,
+      codeLabel: "Code à usage unique",
+      footer:
+        "Si vous n'avez pas essayé de vous connecter, vous pouvez ignorer cet e-mail et votre compte restera sécurisé.",
     },
     deliveryNotification: {
       subject: (invoiceName) =>

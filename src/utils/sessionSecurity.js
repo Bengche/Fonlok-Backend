@@ -6,6 +6,7 @@ import logger from "./logger.js";
 import { emailWrap, emailButton, emailTable } from "./emailTemplate.js";
 
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+const PENDING_LOGIN_TTL_MS = 10 * 60 * 1000;
 
 if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -131,6 +132,25 @@ export function setAuthCookie(res, token) {
     secure: isHttps,
     sameSite: isHttps ? "none" : "lax",
     maxAge: SESSION_TTL_MS,
+  });
+}
+
+export function setPendingLoginCookie(res, token) {
+  const isHttps = isHttpsRequest();
+  res.cookie("loginOtp", token, {
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: isHttps ? "none" : "lax",
+    maxAge: PENDING_LOGIN_TTL_MS,
+  });
+}
+
+export function clearPendingLoginCookie(res) {
+  const isHttps = isHttpsRequest();
+  res.clearCookie("loginOtp", {
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: isHttps ? "none" : "lax",
   });
 }
 

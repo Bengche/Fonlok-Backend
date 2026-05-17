@@ -217,6 +217,17 @@ export const adminLoginLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
+// ─── 12. LOGIN OTP — verification / resend protection ──────────────────────
+export const loginOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: jsonMessage(
+    "Too many verification attempts. Please wait 15 minutes before trying again.",
+  ),
+});
+
 // ─── 11. ADMIN API — protect every admin route ───────────────────────────────
 // Threat: attacker with a leaked/stolen admin JWT making bulk operations
 // (mass data export, bulk broadcasts, etc.).

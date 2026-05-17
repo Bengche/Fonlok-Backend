@@ -47,6 +47,7 @@ import {
   actionLimiter,
   adminLoginLimiter,
   adminApiLimiter,
+  loginOtpLimiter,
 } from "../middleware/rateLimiters.js";
 
 // ── Crash safety: log and survive unhandled errors ───────────────────────────
@@ -184,6 +185,8 @@ app.use(generalLimiter);
 
 // Specific tight limiters on high-risk routes.
 app.post("/auth/login", loginLimiter);
+app.post("/auth/login/verify-otp", loginOtpLimiter);
+app.post("/auth/login/resend-otp", loginOtpLimiter);
 app.post("/auth/register", registerLimiter);
 app.post("/auth/forgot-password", forgotPasswordLimiter);
 app.post("/auth/reset-password", resetPasswordLimiter);

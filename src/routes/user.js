@@ -47,6 +47,16 @@ db.query(
   console.error("⚠️  preferred_email_language migration error:", e.message),
 );
 
+db.query(
+  `ALTER TABLE users
+     ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT false,
+     ADD COLUMN IF NOT EXISTS login_otp_hash TEXT,
+     ADD COLUMN IF NOT EXISTS login_otp_expires TIMESTAMPTZ,
+     ADD COLUMN IF NOT EXISTS login_otp_attempts INTEGER NOT NULL DEFAULT 0`,
+).catch((e) =>
+  console.error("⚠️  two_factor migration error:", e.message),
+);
+
 // ── Multer — profile picture uploads (memory storage → Cloudinary) ──────────
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -222,42 +232,102 @@ router.patch(
     }
   },
 );
-+(
-  // ── PATCH /user/update-email-language ───────────────────────────────────────
-  router.patch(
-    "/update-email-language",
-    authMiddleware,
-    [
-      body("preferred_email_language")
-        .trim()
-        .notEmpty()
-        .isIn(["en", "fr"])
-        .withMessage("Language must be English or French."),
-    ],
-    validate,
-    async (req, res) => {
-      const userId = req.user.id;
-      const { preferred_email_language } = req.body;
-      try {
-        const result = await db.query(
-          "UPDATE users SET preferred_email_language = $1 WHERE id = $2 RETURNING preferred_email_language",
-          [preferred_email_language, userId],
-        );
-        if (result.rows.length === 0) {
-          return res.status(404).json({ message: "User not found." });
-        }
-        return res.status(200).json({
-          ok: true,
-          preferred_email_language: result.rows[0].preferred_email_language,
-        });
-      } catch (err) {
-        console.error(err.message);
-        return res
-          .status(500)
-          .json({ message: "Failed to update email language." });
+// ── PATCH /user/update-email-language ───────────────────────────────────────
+router.patch(
+  "/update-email-language",
+  authMiddleware,
+  [
+    body("preferred_email_language")
+      .trim()
+      .notEmpty()
+      .isIn(["en", "fr"])
+      .withMessage("Language must be English or French."),
+  ],
+  validate,
+  async (req, res) => {
+    const userId = req.user.id;
+    const { preferred_email_language } = req.body;
+    try {
+      const result = await db.query(
+        "UPDATE users SET preferred_email_language = $1 WHERE id = $2 RETURNING preferred_email_language",
+        [preferred_email_language, userId],
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "User not found." });
       }
-    },
-  )
+      return res.status(200).json({
+        ok: true,
+        preferred_email_language: result.rows[0].preferred_email_language,
+      });
+    } catch (err) {
+      console.error(err.message);
+      return res
+        .status(500)
+        .json({ message: "Failed to update email language." });
+    }
+  },
+);
+
+// ── GET /user/two-factor ────────────────────────────────────────────────────
+router.get("/two-factor", authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT two_factor_enabled FROM users WHERE id = $1",
+      [req.user.id],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+    return res.status(200).json({
+      two_factor_enabled: Boolean(result.rows[0].two_factor_enabled),
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ message: "Failed to load security settings." });
+  }
+});
+
+// ── PATCH /user/two-factor ──────────────────────────────────────────────────
+router.patch(
+  "/two-factor",
+  authMiddleware,
+  [
+    body("enabled")
+      .notEmpty()
+      .isBoolean()
+      .withMessage("Two-factor value must be true or false.")
+      .toBoolean(),
+  ],
+  validate,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const enabled = Boolean(req.body.enabled);
+
+      const result = await db.query(
+        `UPDATE users
+            SET two_factor_enabled = $1,
+                login_otp_hash = NULL,
+                login_otp_expires = NULL,
+                login_otp_attempts = 0
+          WHERE id = $2
+      RETURNING two_factor_enabled`,
+        [enabled, userId],
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "User not found." });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        two_factor_enabled: Boolean(result.rows[0].two_factor_enabled),
+      });
+    } catch (err) {
+      console.error(err.message);
+      return res.status(500).json({ message: "Failed to update 2FA settings." });
+    }
+  },
 );
 
 // ── PATCH /user/update-profile-picture ──────────────────────────────────────
