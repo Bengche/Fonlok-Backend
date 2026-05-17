@@ -67,25 +67,47 @@ router.get("/history/:userid", async (req, res) => {
 });
 
 // GET /transactions/statement
-// Download a PDF statement of all transactions in a date range
-// Query params: start_date (ISO string), end_date (ISO string)
+// Download a PDF statement in a date range, or full history when no dates are provided.
+// Query params (optional): start_date (ISO string), end_date (ISO string)
 router.get("/statement", authMiddleware, async (req, res) => {
   try {
-    const userId = req.user_id;
+    const userId = req.user?.id || req.user_id;
     const { start_date, end_date, lang } = req.query;
 
-    if (!start_date || !end_date) {
-      return res.status(400).json({
-        message: "start_date and end_date query parameters are required",
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized. Please sign in.",
       });
     }
 
-    const startDate = new Date(start_date);
-    const endDate = new Date(end_date);
+    let startDate;
+    let endDate;
 
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    if (start_date) {
+      startDate = new Date(start_date);
+      if (isNaN(startDate.getTime())) {
+        return res.status(400).json({
+          message: "Invalid start_date format. Use ISO format (YYYY-MM-DD).",
+        });
+      }
+    } else {
+      startDate = new Date("1970-01-01T00:00:00.000Z");
+    }
+
+    if (end_date) {
+      endDate = new Date(end_date);
+      if (isNaN(endDate.getTime())) {
+        return res.status(400).json({
+          message: "Invalid end_date format. Use ISO format (YYYY-MM-DD).",
+        });
+      }
+    } else {
+      endDate = new Date();
+    }
+
+    if (startDate > endDate) {
       return res.status(400).json({
-        message: "Invalid date format. Use ISO format (YYYY-MM-DD).",
+        message: "start_date must be before end_date.",
       });
     }
 
@@ -96,7 +118,10 @@ router.get("/statement", authMiddleware, async (req, res) => {
       lang,
     );
 
-    const fileName = `fonlok-statement-${startDate.toISOString().split("T")[0]}-${endDate.toISOString().split("T")[0]}.pdf`;
+    const fileName =
+      start_date || end_date
+        ? `fonlok-statement-${startDate.toISOString().split("T")[0]}-${endDate.toISOString().split("T")[0]}.pdf`
+        : "fonlok-statement-full.pdf";
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
