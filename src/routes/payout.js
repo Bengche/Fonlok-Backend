@@ -268,7 +268,10 @@ const executePayout = async (invoiceId) => {
   const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
-    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber, sellerLanguage);
+    const pdfBuffer = await generateReceiptPdf(
+      invoiceRow.invoicenumber,
+      sellerLanguage,
+    );
     sellerPdfAttachment = {
       content: pdfBuffer.toString("base64"),
       filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -276,11 +279,16 @@ const executePayout = async (invoiceId) => {
       disposition: "attachment",
     };
   } catch (pdfErr) {
-    console.error("âš ï¸ Could not generate seller receipt PDF:", pdfErr.message);
+    console.error(
+      "âš ï¸ Could not generate seller receipt PDF:",
+      pdfErr.message,
+    );
   }
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
-  const feeLabel = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
+  const feeLabel = hasReferral
+    ? `${payoutCopy.feeLabel} (1.5%)`
+    : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
@@ -290,8 +298,14 @@ const executePayout = async (invoiceId) => {
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
-        [sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number", invoiceRow.invoicenumber],
-        [sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+        [
+          sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+          invoiceRow.invoicenumber,
+        ],
+        [
+          sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name",
+          invoiceRow.invoicename,
+        ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
         [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
         [
@@ -300,7 +314,11 @@ const executePayout = async (invoiceId) => {
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, invoiceUser.phone],
-        [payoutCopy.status, `&#10003;&nbsp;${payoutCopy.paidOut}`, "color:#16a34a;font-weight:600;"],
+        [
+          payoutCopy.status,
+          `&#10003;&nbsp;${payoutCopy.paidOut}`,
+          "color:#16a34a;font-weight:600;",
+        ],
       ])}
       <p style="color:#475569;margin-top:12px;">${payoutCopy.receiptMessage}</p>
       ${emailButton(sellerReceiptDownloadLink, payoutCopy.downloadButton)}`,
@@ -474,7 +492,10 @@ const executePayoutLink = async (invoiceId) => {
   const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
-    const pdfBuffer = await generateReceiptPdf(invoiceRow.invoicenumber, sellerLanguage);
+    const pdfBuffer = await generateReceiptPdf(
+      invoiceRow.invoicenumber,
+      sellerLanguage,
+    );
     sellerPdfAttachment = {
       content: pdfBuffer.toString("base64"),
       filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -482,11 +503,16 @@ const executePayoutLink = async (invoiceId) => {
       disposition: "attachment",
     };
   } catch (pdfErr) {
-    console.error("âš ï¸ Could not generate seller receipt PDF:", pdfErr.message);
+    console.error(
+      "âš ï¸ Could not generate seller receipt PDF:",
+      pdfErr.message,
+    );
   }
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
-  const feeLabel = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
+  const feeLabel = hasReferral
+    ? `${payoutCopy.feeLabel} (1.5%)`
+    : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
@@ -496,8 +522,14 @@ const executePayoutLink = async (invoiceId) => {
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
-        [sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number", invoiceRow.invoicenumber],
-        [sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+        [
+          sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+          invoiceRow.invoicenumber,
+        ],
+        [
+          sellerLanguage === "fr" ? "Nom de la facture" : "Invoice Name",
+          invoiceRow.invoicename,
+        ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
         [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
         [
@@ -506,7 +538,11 @@ const executePayoutLink = async (invoiceId) => {
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, invoiceUser.phone],
-        [payoutCopy.status, `&#10003;&nbsp;${payoutCopy.paidOut}`, "color:#16a34a;font-weight:600;"],
+        [
+          payoutCopy.status,
+          `&#10003;&nbsp;${payoutCopy.paidOut}`,
+          "color:#16a34a;font-weight:600;",
+        ],
       ])}
       <p style="color:#475569;margin-top:12px;">${payoutCopy.receiptMessage}</p>
       ${emailButton(sellerReceiptDownloadLink, payoutCopy.downloadButton)}`,
@@ -1265,7 +1301,9 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       }
       const sellerLanguage = await getUserEmailLanguageById(invoice.userid);
       const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
-      const msFeeLabelLocalized = hasReferral ? `${payoutCopy.feeLabel} (1.5%)` : `${payoutCopy.feeLabel} (2%)`;
+      const msFeeLabelLocalized = hasReferral
+        ? `${payoutCopy.feeLabel} (1.5%)`
+        : `${payoutCopy.feeLabel} (2%)`;
       const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
       const sellerMsg = {
         to: seller.email,
@@ -1275,7 +1313,10 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${milestone.label} — ${payoutCopy.title}</h2>
           <p style="color:#475569;">${payoutCopy.body(seller.name)}</p>
           ${emailTable([
-            [sellerLanguage === "fr" ? "Facture" : "Invoice", invoice.invoicenumber],
+            [
+              sellerLanguage === "fr" ? "Facture" : "Invoice",
+              invoice.invoicenumber,
+            ],
             [sellerLanguage === "fr" ? "Jalon" : "Milestone", milestone.label],
             [payoutCopy.grossAmount, `${milestoneAmount} XAF`],
             [msFeeLabelLocalized, `\u2212${totalFee} XAF`, "color:#dc2626;"],
@@ -1301,7 +1342,10 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       await sgMail.send(sellerMsg);
       console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
     } catch (emailErr) {
-      console.error("❌ Seller milestone receipt email error:", emailErr.message);
+      console.error(
+        "❌ Seller milestone receipt email error:",
+        emailErr.message,
+      );
     }
 
     return res.status(200).json({

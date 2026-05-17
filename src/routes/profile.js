@@ -321,7 +321,10 @@ router.post(
            <p style="color:#334155;margin:0 0 16px;">Someone wants to work with you on Fonlok. Review the details below and create an invoice if interested.</p>
            ${emailTable([
              ["Name", sender_name],
-             ["Email", `<a href="mailto:${sender_email}" style="color:#0F1F3D;">${sender_email}</a>`],
+             [
+               "Email",
+               `<a href="mailto:${sender_email}" style="color:#0F1F3D;">${sender_email}</a>`,
+             ],
              ["Message", message],
            ])}
            <p style="color:#64748b;font-size:13px;margin:0 0 16px;">To continue, create an invoice in your dashboard and share the secure payment link with this buyer.</p>

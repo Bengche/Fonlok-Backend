@@ -222,41 +222,42 @@ router.patch(
     }
   },
 );
-+
-// ── PATCH /user/update-email-language ───────────────────────────────────────
-router.patch(
-  "/update-email-language",
-  authMiddleware,
-  [
-    body("preferred_email_language")
-      .trim()
-      .notEmpty()
-      .isIn(["en", "fr"])
-      .withMessage("Language must be English or French."),
-  ],
-  validate,
-  async (req, res) => {
-    const userId = req.user.id;
-    const { preferred_email_language } = req.body;
-    try {
-      const result = await db.query(
-        "UPDATE users SET preferred_email_language = $1 WHERE id = $2 RETURNING preferred_email_language",
-        [preferred_email_language, userId],
-      );
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: "User not found." });
++(
+  // ── PATCH /user/update-email-language ───────────────────────────────────────
+  router.patch(
+    "/update-email-language",
+    authMiddleware,
+    [
+      body("preferred_email_language")
+        .trim()
+        .notEmpty()
+        .isIn(["en", "fr"])
+        .withMessage("Language must be English or French."),
+    ],
+    validate,
+    async (req, res) => {
+      const userId = req.user.id;
+      const { preferred_email_language } = req.body;
+      try {
+        const result = await db.query(
+          "UPDATE users SET preferred_email_language = $1 WHERE id = $2 RETURNING preferred_email_language",
+          [preferred_email_language, userId],
+        );
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "User not found." });
+        }
+        return res.status(200).json({
+          ok: true,
+          preferred_email_language: result.rows[0].preferred_email_language,
+        });
+      } catch (err) {
+        console.error(err.message);
+        return res
+          .status(500)
+          .json({ message: "Failed to update email language." });
       }
-      return res.status(200).json({
-        ok: true,
-        preferred_email_language: result.rows[0].preferred_email_language,
-      });
-    } catch (err) {
-      console.error(err.message);
-      return res
-        .status(500)
-        .json({ message: "Failed to update email language." });
-    }
-  },
+    },
+  )
 );
 
 // ── PATCH /user/update-profile-picture ──────────────────────────────────────

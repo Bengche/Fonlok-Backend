@@ -92,16 +92,8 @@ router.get("/verify", adminMiddleware, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/feature-request", async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      title,
-      details,
-      userId,
-      username,
-      locale,
-      pathname,
-    } = req.body || {};
+    const { name, email, title, details, userId, username, locale, pathname } =
+      req.body || {};
 
     const requestTitle = String(title || "").trim();
     const requestDetails = String(details || "").trim();
@@ -125,13 +117,18 @@ router.post("/feature-request", async (req, res) => {
       const userRow = userResult.rows[0];
       if (userRow) {
         accountEmail = accountEmail || userRow.email || "";
-        accountLabel = submittedName || userRow.name || userRow.username || "Registered user";
+        accountLabel =
+          submittedName ||
+          userRow.name ||
+          userRow.username ||
+          "Registered user";
       }
     }
 
     if (!accountEmail) {
       return res.status(400).json({
-        message: "Please provide an email address so we can review your request.",
+        message:
+          "Please provide an email address so we can review your request.",
       });
     }
 
@@ -165,8 +162,7 @@ router.post("/feature-request", async (req, res) => {
          <div style="border-left:4px solid #f59e0b;background:#fffaf0;padding:14px 16px;border-radius:10px;">
            <p style="margin:0 0 8px;color:#0f172a;font-weight:800;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;">Request details</p>
            <p style="margin:0;color:#334155;line-height:1.8;">${safeDetails}</p>
-         </div>`
-          ,
+         </div>`,
         { subtitle: "Feature Request" },
       ),
     });

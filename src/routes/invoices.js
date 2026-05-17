@@ -646,7 +646,10 @@ router.patch("/mark-delivered/:id", async (req, res) => {
         ])}
         ${emailButton(`${process.env.FRONTEND_URL}/invoice/${invoice.invoicenumber}`, deliveryCopy.button)}`,
         {
-          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un vendeur a marqué sa facture comme livrée sur Fonlok Escrow." : "You received this email because a seller marked their invoice as delivered on Fonlok Escrow.",
+          footerNote:
+            buyerLanguage === "fr"
+              ? "Vous avez reçu cet e-mail parce qu'un vendeur a marqué sa facture comme livrée sur Fonlok Escrow."
+              : "You received this email because a seller marked their invoice as delivered on Fonlok Escrow.",
         },
       ),
     };

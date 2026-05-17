@@ -30,7 +30,11 @@ function drawRight(page, text, { rx, y, size, font, color }) {
 }
 
 function normalizePdfLocale(locale) {
-  return String(locale || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  return String(locale || "en")
+    .toLowerCase()
+    .startsWith("fr")
+    ? "fr"
+    : "en";
 }
 
 const PDF_COPY = {
@@ -63,8 +67,7 @@ const PDF_COPY = {
       "This document is cryptographically signed and does not require a physical signature.",
     footerStatement:
       "Official transaction statement issued by Fonlok — Secure Escrow Payments for digital services.",
-    footerStatement2:
-      "For account verification and dispute resolution.",
+    footerStatement2: "For account verification and dispute resolution.",
     statementTitle: "Account Transaction Statement",
     account: "Account:",
     email: "Email:",
@@ -524,10 +527,7 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
     ],
     [copy.description, (inv.description || "—").substring(0, 78)],
     [copy.currency, inv.currency],
-    [
-      copy.invoiceStatus,
-      copy.statusText(inv.status),
-    ],
+    [copy.invoiceStatus, copy.statusText(inv.status)],
   ];
   if (inv.expires_at)
     rows.push([
@@ -802,37 +802,29 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
   page.drawRectangle({ x: 0, y: 0, width, height: footerY, color: navy });
   page.drawRectangle({ x: 0, y: footerY, width, height: 1.5, color: amber });
 
-  drawCentred(
-    page,
-    copy.footerReceipt,
-    {
-      cx: width / 2,
-      y: 58,
-      size: 7,
-      font: regular,
-      color: rgb(0.7, 0.78, 0.9),
-    },
-  );
-  drawCentred(
-    page,
-    `${copy.footerReceipt2}  |  ${BRAND.domain}`,
-    {
-      cx: width / 2,
-      y: 44,
-      size: 6.5,
-      font: regular,
-      color: rgb(0.55, 0.63, 0.76),
-    },
-  );
+  drawCentred(page, copy.footerReceipt, {
+    cx: width / 2,
+    y: 58,
+    size: 7,
+    font: regular,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+  drawCentred(page, `${copy.footerReceipt2}  |  ${BRAND.domain}`, {
+    cx: width / 2,
+    y: 44,
+    size: 6.5,
+    font: regular,
+    color: rgb(0.55, 0.63, 0.76),
+  });
   drawCentred(
     page,
     `${pdfLocale === "fr" ? "Généré" : "Generated"}: ${new Date().toUTCString()}`,
     {
-    cx: width / 2,
-    y: 28,
-    size: 6.5,
-    font: regular,
-    color: rgb(0.5, 0.58, 0.72),
+      cx: width / 2,
+      y: 28,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.5, 0.58, 0.72),
     },
   );
 
@@ -849,7 +841,12 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
  * Used by:
  *  - GET /transactions/statement  (download endpoint)
  */
-export async function generateStatementPdf(userId, startDate, endDate, locale = "en") {
+export async function generateStatementPdf(
+  userId,
+  startDate,
+  endDate,
+  locale = "en",
+) {
   const pdfLocale = normalizePdfLocale(locale);
   const copy = PDF_COPY[pdfLocale];
   const dateLocale = pdfLocale === "fr" ? "fr-FR" : "en-GB";
@@ -1088,7 +1085,12 @@ export async function generateStatementPdf(userId, startDate, endDate, locale = 
   }
 
   drawStatBox(margin, copy.totalAmount, totalAmount, " XAF");
-  drawStatBox(margin + statBoxW + 6, copy.transactions, transactions.length, "");
+  drawStatBox(
+    margin + statBoxW + 6,
+    copy.transactions,
+    transactions.length,
+    "",
+  );
   drawStatBox(margin + statBoxW * 2 + 12, copy.successful, successCount, "");
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1189,8 +1191,7 @@ export async function generateStatementPdf(userId, startDate, endDate, locale = 
       color: darkText,
     });
 
-    const statusLabel =
-      copy.statusText(tx.status || "pending");
+    const statusLabel = copy.statusText(tx.status || "pending");
     const statusColor =
       tx.status === "success" || tx.status === "paid" ? green : mutedText;
     page.drawText(statusLabel, {
@@ -1208,11 +1209,11 @@ export async function generateStatementPdf(userId, startDate, endDate, locale = 
     page.drawText(
       `${copy.moreTransactions} ${transactions.length - 20} ${copy.moreTransactionsTail}`,
       {
-      x: margin + 10,
-      y: cursorY - 10,
-      size: 7.5,
-      font: regular,
-      color: mutedText,
+        x: margin + 10,
+        y: cursorY - 10,
+        size: 7.5,
+        font: regular,
+        color: mutedText,
       },
     );
   }
@@ -1284,28 +1285,20 @@ export async function generateStatementPdf(userId, startDate, endDate, locale = 
   page.drawRectangle({ x: 0, y: 0, width, height: footerY, color: navy });
   page.drawRectangle({ x: 0, y: footerY, width, height: 1.5, color: amber });
 
-  drawCentred(
-    page,
-    copy.footerStatement,
-    {
-      cx: width / 2,
-      y: 58,
-      size: 7,
-      font: regular,
-      color: rgb(0.7, 0.78, 0.9),
-    },
-  );
-  drawCentred(
-    page,
-    `${copy.footerStatement2}  |  ${BRAND.domain}`,
-    {
-      cx: width / 2,
-      y: 44,
-      size: 6.5,
-      font: regular,
-      color: rgb(0.55, 0.63, 0.76),
-    },
-  );
+  drawCentred(page, copy.footerStatement, {
+    cx: width / 2,
+    y: 58,
+    size: 7,
+    font: regular,
+    color: rgb(0.7, 0.78, 0.9),
+  });
+  drawCentred(page, `${copy.footerStatement2}  |  ${BRAND.domain}`, {
+    cx: width / 2,
+    y: 44,
+    size: 6.5,
+    font: regular,
+    color: rgb(0.55, 0.63, 0.76),
+  });
   drawCentred(page, `Generated: ${new Date().toUTCString()}`, {
     cx: width / 2,
     y: 28,

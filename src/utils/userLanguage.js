@@ -1,7 +1,11 @@
 import db from "../controllers/db.js";
 
 export function normalizeEmailLanguage(language) {
-  return String(language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  return String(language || "en")
+    .toLowerCase()
+    .startsWith("fr")
+    ? "fr"
+    : "en";
 }
 
 export async function getUserEmailLanguageById(userId) {

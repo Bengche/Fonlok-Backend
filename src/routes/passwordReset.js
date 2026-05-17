@@ -174,9 +174,12 @@ router.post(
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${passwordCopy.changedTitle}</h2>
           <p style="color:#475569;">${passwordCopy.changedBody(user.name)}</p>
-          <p style="color:#dc2626;font-weight:600;">${interpolateEmailCopy(passwordCopy.changedWarning, {
-            sender: process.env.VERIFIED_SENDER,
-          })}</p>`,
+          <p style="color:#dc2626;font-weight:600;">${interpolateEmailCopy(
+            passwordCopy.changedWarning,
+            {
+              sender: process.env.VERIFIED_SENDER,
+            },
+          )}</p>`,
           {
             footerNote: `&copy; ${new Date().getFullYear()} Fonlok &mdash; Secure Escrow Payments`,
           },

@@ -385,8 +385,12 @@ router.post(
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${sellerDispute.sellerTitle}</h2>
             <p style="color:#475569;">${
               isSellerOpener
-                ? (sellerLanguage === "fr" ? "Nous avons reçu votre demande de litige. Notre équipe d'administration examinera tous les messages et prendra une décision équitable dans <strong>24 à 48 heures</strong>." : "We have received your dispute request. Our admin team will review all messages and make a fair decision within 24-48 hours.")
-                : (sellerLanguage === "fr" ? "Un acheteur a ouvert un litige sur l'une de vos factures. Notre équipe d'administration a été notifiée et examinera le dossier dans <strong>24 à 48 heures</strong>." : "A buyer has filed a dispute on one of your invoices. Our admin team has been notified and will review the case within 24-48 hours.")
+                ? sellerLanguage === "fr"
+                  ? "Nous avons reçu votre demande de litige. Notre équipe d'administration examinera tous les messages et prendra une décision équitable dans <strong>24 à 48 heures</strong>."
+                  : "We have received your dispute request. Our admin team will review all messages and make a fair decision within 24-48 hours."
+                : sellerLanguage === "fr"
+                  ? "Un acheteur a ouvert un litige sur l'une de vos factures. Notre équipe d'administration a été notifiée et examinera le dossier dans <strong>24 à 48 heures</strong>."
+                  : "A buyer has filed a dispute on one of your invoices. Our admin team has been notified and will review the case within 24-48 hours."
             }</p>
             ${emailTable([
               ["Invoice Number", invoicenumber],
@@ -396,14 +400,23 @@ router.post(
                 `${invoice.amount} ${invoice.currency}`,
                 "font-weight:700;font-size:15px;",
               ],
-              [sellerLanguage === "fr" ? "Ouvert par" : "Opened By", sellerLanguage === "fr" ? "Acheteur" : "Buyer"],
+              [
+                sellerLanguage === "fr" ? "Ouvert par" : "Opened By",
+                sellerLanguage === "fr" ? "Acheteur" : "Buyer",
+              ],
               [sellerLanguage === "fr" ? "Raison" : "Reason", reason],
             ])}
             <p style="color:#475569;">${sellerLanguage === "fr" ? "Vous pouvez consulter la conversation complète et suivre la résolution du litige dans le fil de discussion." : "You can view the full conversation and track the dispute resolution in the chat thread."}</p>
             ${emailButton(chatLink, sellerDispute.button)}`,
             {
-              subtitle: sellerLanguage === "fr" ? "Notification de litige" : "Dispute Notification",
-              footerNote: sellerLanguage === "fr" ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok." : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
+              subtitle:
+                sellerLanguage === "fr"
+                  ? "Notification de litige"
+                  : "Dispute Notification",
+              footerNote:
+                sellerLanguage === "fr"
+                  ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok."
+                  : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
             },
           ),
         };
@@ -438,14 +451,29 @@ router.post(
                 `${invoice.amount} ${invoice.currency}`,
                 "font-weight:700;font-size:15px;",
               ],
-              [buyerLanguage === "fr" ? "Ouvert par" : "Opened By", isBuyerOpener ? (buyerLanguage === "fr" ? "Vous (Acheteur)" : "You (buyer)") : (buyerLanguage === "fr" ? "Vendeur" : "Seller")],
+              [
+                buyerLanguage === "fr" ? "Ouvert par" : "Opened By",
+                isBuyerOpener
+                  ? buyerLanguage === "fr"
+                    ? "Vous (Acheteur)"
+                    : "You (buyer)"
+                  : buyerLanguage === "fr"
+                    ? "Vendeur"
+                    : "Seller",
+              ],
               [buyerLanguage === "fr" ? "Raison" : "Reason", reason],
             ])}
             <p style="color:#475569;">${buyerLanguage === "fr" ? "Vos fonds sont en toute sécurité en séquestre et ne seront pas libérés tant que le litige ne sera pas résolu." : "Your funds are safely held in escrow and will not be released until the dispute is resolved."}</p>
             ${emailButton(invoicePageLink, buyerDispute.button)}`,
             {
-              subtitle: buyerLanguage === "fr" ? "Notification de litige" : "Dispute Notification",
-              footerNote: buyerLanguage === "fr" ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok." : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
+              subtitle:
+                buyerLanguage === "fr"
+                  ? "Notification de litige"
+                  : "Dispute Notification",
+              footerNote:
+                buyerLanguage === "fr"
+                  ? "Veuillez ne pas essayer de faire pression sur l'autre partie. Tous les litiges sont examinés et résolus équitablement par l'administration de Fonlok."
+                  : "Please do not attempt to pressure the other party. All disputes are reviewed and resolved fairly by Fonlok admin.",
             },
           ),
         };

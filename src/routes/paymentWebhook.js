@@ -198,7 +198,10 @@ export async function processSuccessfulPayment(paymentUUID) {
         ${emailButton(confirmationLink, paymentConfirm.confirmButton)}
         <p style="color:#475569;margin-top:4px;font-size:14px;">${paymentConfirm.codeMessage} <strong style="font-family:monospace;font-size:17px;letter-spacing:3px;color:#0F1F3D;">${finalCode}</strong></p>`,
         {
-          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un paiement a été traité en votre nom via Fonlok Escrow. Ne partagez pas votre code de confirmation ou votre lien avec personne d'autre que le vendeur." : "You received this email because a payment was processed on your behalf through Fonlok Escrow. Do not share your confirmation code or link with anyone other than the seller.",
+          footerNote:
+            buyerLanguage === "fr"
+              ? "Vous avez reçu cet e-mail parce qu'un paiement a été traité en votre nom via Fonlok Escrow. Ne partagez pas votre code de confirmation ou votre lien avec personne d'autre que le vendeur."
+              : "You received this email because a payment was processed on your behalf through Fonlok Escrow. Do not share your confirmation code or link with anyone other than the seller.",
         },
       );
     } else {
@@ -220,10 +223,17 @@ export async function processSuccessfulPayment(paymentUUID) {
             `${payment.amount} XAF`,
             "font-weight:700;color:#16a34a;font-size:15px;",
           ],
-          [buyerLanguage === "fr" ? "Type de paiement" : "Payment Type", buyerLanguage === "fr" ? "Séquestre par jalons" : "Milestone Escrow"],
+          [
+            buyerLanguage === "fr" ? "Type de paiement" : "Payment Type",
+            buyerLanguage === "fr"
+              ? "Séquestre par jalons"
+              : "Milestone Escrow",
+          ],
           [
             buyerLanguage === "fr" ? "Statut" : "Status",
-            buyerLanguage === "fr" ? "&#10003;&nbsp;Fonds conservés en séquestre" : "&#10003;&nbsp;Funds Held in Escrow",
+            buyerLanguage === "fr"
+              ? "&#10003;&nbsp;Fonds conservés en séquestre"
+              : "&#10003;&nbsp;Funds Held in Escrow",
             "color:#16a34a;font-weight:600;",
           ],
         ])}
@@ -231,7 +241,9 @@ export async function processSuccessfulPayment(paymentUUID) {
         <p style="color:#475569;margin-bottom:12px;">${paymentConfirm.milestoneNote}</p>
         ${emailTable(
           milestonesData.rows.map((m) => [
-            buyerLanguage === "fr" ? `Jalon ${m.milestone_number}: ${m.label}` : `Milestone ${m.milestone_number}: ${m.label}`,
+            buyerLanguage === "fr"
+              ? `Jalon ${m.milestone_number}: ${m.label}`
+              : `Milestone ${m.milestone_number}: ${m.label}`,
             `${Number(m.amount).toLocaleString()} XAF`,
           ]),
         )}
@@ -246,7 +258,10 @@ export async function processSuccessfulPayment(paymentUUID) {
         </ol>
         <p style="color:#475569;font-size:13px;">${paymentConfirm.warning}</p>`,
         {
-          footerNote: buyerLanguage === "fr" ? "Vous avez reçu cet e-mail parce qu'un paiement en séquestre basé sur les jalons a été traité en votre nom via Fonlok. Chaque jalon nécessite votre approbation explicite avant que les fonds ne soient libérés au vendeur." : "You received this email because a milestone-based escrow payment was processed on your behalf through Fonlok. Each milestone requires your explicit approval before any funds are released to the seller.",
+          footerNote:
+            buyerLanguage === "fr"
+              ? "Vous avez reçu cet e-mail parce qu'un paiement en séquestre basé sur les jalons a été traité en votre nom via Fonlok. Chaque jalon nécessite votre approbation explicite avant que les fonds ne soient libérés au vendeur."
+              : "You received this email because a milestone-based escrow payment was processed on your behalf through Fonlok. Each milestone requires your explicit approval before any funds are released to the seller.",
         },
       );
     }
@@ -358,14 +373,18 @@ export async function processSuccessfulPayment(paymentUUID) {
           ${emailTable([
             ["Invoice Number", invoice_number],
             [
-              sellerLanguage === "fr" ? "Montant en séquestre" : "Amount in Escrow",
+              sellerLanguage === "fr"
+                ? "Montant en séquestre"
+                : "Amount in Escrow",
               `${payment.amount} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
             [sellerLanguage === "fr" ? "Acheteur" : "Buyer", buyerName],
             [
               sellerLanguage === "fr" ? "Statut du séquestre" : "Escrow Status",
-              sellerLanguage === "fr" ? "&#10003;&nbsp;Fonds sécurisés" : "&#10003;&nbsp;Funds Secured",
+              sellerLanguage === "fr"
+                ? "&#10003;&nbsp;Fonds sécurisés"
+                : "&#10003;&nbsp;Funds Secured",
               "color:#16a34a;font-weight:600;",
             ],
           ])}
@@ -379,7 +398,10 @@ export async function processSuccessfulPayment(paymentUUID) {
           ${emailButton(sellerDashboardLink, sellerLanguage === "fr" ? "Aller au tableau de bord" : "Go to Dashboard")}
           <p style="color:#94a3b8;font-size:13px;margin-top:20px;">${invoicePaidCopy.footer}</p>`,
           {
-            footerNote: sellerLanguage === "fr" ? "Vous avez reçu cet e-mail parce que l'une de vos factures Fonlok a été payée. Ne partagez vos identifiants de compte avec personne." : "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
+            footerNote:
+              sellerLanguage === "fr"
+                ? "Vous avez reçu cet e-mail parce que l'une de vos factures Fonlok a été payée. Ne partagez vos identifiants de compte avec personne."
+                : "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
           },
         ),
       };

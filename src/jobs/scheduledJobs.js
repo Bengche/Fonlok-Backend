@@ -27,7 +27,10 @@ import {
   emailTable,
   emailButtonNavy,
 } from "../utils/emailTemplate.js";
-import { buildEmailCopy, interpolateEmailCopy } from "../utils/emailLanguageCopy.js";
+import {
+  buildEmailCopy,
+  interpolateEmailCopy,
+} from "../utils/emailLanguageCopy.js";
 import { getUserEmailLanguageById } from "../utils/userLanguage.js";
 import dotenv from "dotenv";
 dotenv.config();
