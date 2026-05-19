@@ -23,15 +23,15 @@ if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-db.query(`
+db.query(
+  `
   ALTER TABLE users
     ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS login_otp_hash TEXT,
     ADD COLUMN IF NOT EXISTS login_otp_expires TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS login_otp_attempts INTEGER NOT NULL DEFAULT 0
-`).catch((e) =>
-  console.error("⚠️  login OTP migration error:", e.message),
-);
+`,
+).catch((e) => console.error("⚠️  login OTP migration error:", e.message));
 
 function generateOtp() {
   return String(crypto.randomInt(100000, 1000000));
@@ -100,7 +100,7 @@ router.post(
     const normalizedEmail = email.toLowerCase();
     try {
       const result = await db.query(
-        "SELECT id, name, username, email, password, normalizedemail, two_factor_enabled FROM users WHERE email = $1 OR username = $2",
+        "SELECT id, name, username, email, password, two_factor_enabled FROM users WHERE email = $1 OR username = $2",
         [normalizedEmail, email],
       );
       if (result.rows.length === 0) {
@@ -159,7 +159,12 @@ router.post(
           });
         }
 
-        const { token } = await issueUserAuthSession(res, user, req, "password");
+        const { token } = await issueUserAuthSession(
+          res,
+          user,
+          req,
+          "password",
+        );
 
         res.status(200).json({
           message: "Logged in successfully.",
@@ -267,7 +272,12 @@ router.post(
       await clearOtpChallenge(user.id);
       clearPendingLoginCookie(res);
 
-      const { token } = await issueUserAuthSession(res, user, req, "password-otp");
+      const { token } = await issueUserAuthSession(
+        res,
+        user,
+        req,
+        "password-otp",
+      );
       logger.info("user login with otp", { userId: user.id });
 
       return res.status(200).json({
@@ -285,67 +295,63 @@ router.post(
   },
 );
 
-router.post(
-  "/login/resend-otp",
-  async (req, res) => {
-    try {
-      const pendingToken = req.cookies.loginOtp;
-      if (!pendingToken) {
-        return res.status(401).json({
-          message: "Your verification session expired. Please sign in again.",
-        });
-      }
+router.post("/login/resend-otp", async (req, res) => {
+  try {
+    const pendingToken = req.cookies.loginOtp;
+    if (!pendingToken) {
+      return res.status(401).json({
+        message: "Your verification session expired. Please sign in again.",
+      });
+    }
 
-      const decoded = jwt.verify(pendingToken, process.env.JWT_SECRET);
-      const userId = decoded?.id;
-      if (!userId) {
-        clearPendingLoginCookie(res);
-        return res.status(401).json({
-          message: "Your verification session expired. Please sign in again.",
-        });
-      }
+    const decoded = jwt.verify(pendingToken, process.env.JWT_SECRET);
+    const userId = decoded?.id;
+    if (!userId) {
+      clearPendingLoginCookie(res);
+      return res.status(401).json({
+        message: "Your verification session expired. Please sign in again.",
+      });
+    }
 
-      const result = await db.query(
-        `SELECT id, username, email, name, two_factor_enabled
+    const result = await db.query(
+      `SELECT id, username, email, name, two_factor_enabled
            FROM users
           WHERE id = $1`,
-        [userId],
-      );
+      [userId],
+    );
 
-      if (result.rows.length === 0 || !result.rows[0].two_factor_enabled) {
-        clearPendingLoginCookie(res);
-        return res.status(401).json({
-          message: "Your verification session expired. Please sign in again.",
-        });
-      }
+    if (result.rows.length === 0 || !result.rows[0].two_factor_enabled) {
+      clearPendingLoginCookie(res);
+      return res.status(401).json({
+        message: "Your verification session expired. Please sign in again.",
+      });
+    }
 
-      const user = result.rows[0];
-      const otp = generateOtp();
-      const hashedOtp = await bcrypt.hash(otp, 10);
-      const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    const user = result.rows[0];
+    const otp = generateOtp();
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-      await db.query(
-        `UPDATE users
+    await db.query(
+      `UPDATE users
             SET login_otp_hash = $1,
                 login_otp_expires = $2,
                 login_otp_attempts = 0
           WHERE id = $3`,
-        [hashedOtp, otpExpires, user.id],
-      );
+      [hashedOtp, otpExpires, user.id],
+    );
 
-      await sendLoginOtpEmail(user, otp);
+    await sendLoginOtpEmail(user, otp);
 
-      return res.status(200).json({
-        message:
-          "A new verification code has been sent to your email address.",
-      });
-    } catch (error) {
-      console.error(error.message);
-      return res.status(500).json({
-        message: "We could not resend the verification code. Please try again.",
-      });
-    }
-  },
-);
+    return res.status(200).json({
+      message: "A new verification code has been sent to your email address.",
+    });
+  } catch (error) {
+    console.error(error.message);
+    return res.status(500).json({
+      message: "We could not resend the verification code. Please try again.",
+    });
+  }
+});
 
 export default router;

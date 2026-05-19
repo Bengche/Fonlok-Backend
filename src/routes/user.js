@@ -53,9 +53,7 @@ db.query(
      ADD COLUMN IF NOT EXISTS login_otp_hash TEXT,
      ADD COLUMN IF NOT EXISTS login_otp_expires TIMESTAMPTZ,
      ADD COLUMN IF NOT EXISTS login_otp_attempts INTEGER NOT NULL DEFAULT 0`,
-).catch((e) =>
-  console.error("⚠️  two_factor migration error:", e.message),
-);
+).catch((e) => console.error("⚠️  two_factor migration error:", e.message));
 
 // ── Multer — profile picture uploads (memory storage → Cloudinary) ──────────
 const upload = multer({
@@ -283,7 +281,9 @@ router.get("/two-factor", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
-    return res.status(500).json({ message: "Failed to load security settings." });
+    return res
+      .status(500)
+      .json({ message: "Failed to load security settings." });
   }
 });
 
@@ -325,7 +325,9 @@ router.patch(
       });
     } catch (err) {
       console.error(err.message);
-      return res.status(500).json({ message: "Failed to update 2FA settings." });
+      return res
+        .status(500)
+        .json({ message: "Failed to update 2FA settings." });
     }
   },
 );
