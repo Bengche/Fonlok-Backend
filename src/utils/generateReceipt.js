@@ -1148,25 +1148,52 @@ export async function generateStatementPdf(
     p.drawRectangle({ x: 0, y: 0, width, height: footerH, color: navy });
     p.drawRectangle({ x: 0, y: footerH, width, height: 1.5, color: amber });
     drawCentred(p, copy.footerStatement, {
-      cx: width / 2, y: 58, size: 7, font: regular, color: rgb(0.7, 0.78, 0.9),
+      cx: width / 2,
+      y: 58,
+      size: 7,
+      font: regular,
+      color: rgb(0.7, 0.78, 0.9),
     });
     drawCentred(p, `${copy.footerStatement2}  |  ${BRAND.domain}`, {
-      cx: width / 2, y: 44, size: 6.5, font: regular, color: rgb(0.55, 0.63, 0.76),
+      cx: width / 2,
+      y: 44,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.55, 0.63, 0.76),
     });
     drawCentred(p, `Generated: ${new Date().toUTCString()}`, {
-      cx: width / 2, y: 28, size: 6.5, font: regular, color: rgb(0.5, 0.58, 0.72),
+      cx: width / 2,
+      y: 28,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.5, 0.58, 0.72),
     });
     drawCentred(p, `Page ${pageNum}`, {
-      cx: width / 2, y: 14, size: 6.5, font: regular, color: rgb(0.5, 0.58, 0.72),
+      cx: width / 2,
+      y: 14,
+      size: 6.5,
+      font: regular,
+      color: rgb(0.5, 0.58, 0.72),
     });
   }
 
   function drawTableRowHeader(p, startY) {
     p.drawRectangle({
-      x: margin, y: startY - 20, width: contentW, height: 20, color: navy, borderRadius: 3,
+      x: margin,
+      y: startY - 20,
+      width: contentW,
+      height: 20,
+      color: navy,
+      borderRadius: 3,
     });
     colPositions.forEach(({ label, cx }) => {
-      drawCentred(p, label, { cx, y: startY - 10, size: 7.5, font: bold, color: white });
+      drawCentred(p, label, {
+        cx,
+        y: startY - 10,
+        size: 7.5,
+        font: bold,
+        color: white,
+      });
     });
     return startY - 22;
   }
@@ -1175,18 +1202,42 @@ export async function generateStatementPdf(
     pageNum++;
     const p = pdfDoc.addPage([595.28, 841.89]);
     const miniH = 40;
-    p.drawRectangle({ x: 0, y: height - miniH, width, height: miniH, color: navy });
-    p.drawRectangle({ x: 0, y: height - miniH, width, height: 2, color: amber });
+    p.drawRectangle({
+      x: 0,
+      y: height - miniH,
+      width,
+      height: miniH,
+      color: navy,
+    });
+    p.drawRectangle({
+      x: 0,
+      y: height - miniH,
+      width,
+      height: 2,
+      color: amber,
+    });
     p.drawText("Fonlok", {
-      x: margin, y: height - miniH + (miniH - 14) / 2, size: 14, font: bold, color: amber,
+      x: margin,
+      y: height - miniH + (miniH - 14) / 2,
+      size: 14,
+      font: bold,
+      color: amber,
     });
     drawRight(p, copy.officialStatement, {
-      rx: width - margin, y: height - miniH + (miniH - 9) / 2, size: 9, font: bold, color: white,
+      rx: width - margin,
+      y: height - miniH + (miniH - 9) / 2,
+      size: 9,
+      font: bold,
+      color: white,
     });
     currentPage = p;
     let y = height - miniH - 16;
     p.drawText(`${copy.transactionDetails} (cont.)`, {
-      x: margin, y, size: 9, font: bold, color: darkText,
+      x: margin,
+      y,
+      size: 9,
+      font: bold,
+      color: darkText,
     });
     y -= 12;
     return drawTableRowHeader(p, y);
@@ -1203,16 +1254,26 @@ export async function generateStatementPdf(
     // Alternating row background
     if (i % 2 === 0) {
       currentPage.drawRectangle({
-        x: margin, y: cursorY - rowH, width: contentW, height: rowH, color: lightGray,
+        x: margin,
+        y: cursorY - rowH,
+        width: contentW,
+        height: rowH,
+        color: lightGray,
       });
     }
 
     const txDate = new Date(tx.createdat).toLocaleDateString(dateLocale, {
-      day: "2-digit", month: "short", year: "numeric",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
 
     currentPage.drawText(txDate, {
-      x: margin + 10, y: cursorY - 13, size: 8, font: regular, color: darkText,
+      x: margin + 10,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: darkText,
     });
 
     const desc = (
@@ -1222,18 +1283,33 @@ export async function generateStatementPdf(
     ).substring(0, 25);
 
     currentPage.drawText(desc, {
-      x: margin + 125, y: cursorY - 13, size: 8, font: regular, color: darkText,
+      x: margin + 125,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: darkText,
     });
 
-    currentPage.drawText(`${Number(tx.amount).toLocaleString()} ${tx.currency}`, {
-      x: margin + 330, y: cursorY - 13, size: 8, font: regular, color: darkText,
-    });
+    currentPage.drawText(
+      `${Number(tx.amount).toLocaleString()} ${tx.currency}`,
+      {
+        x: margin + 330,
+        y: cursorY - 13,
+        size: 8,
+        font: regular,
+        color: darkText,
+      },
+    );
 
     const statusLabel = copy.statusText(tx.status || "pending");
     const statusColor =
       tx.status === "success" || tx.status === "paid" ? green : mutedText;
     currentPage.drawText(statusLabel, {
-      x: margin + 440, y: cursorY - 13, size: 8, font: regular, color: statusColor,
+      x: margin + 440,
+      y: cursorY - 13,
+      size: 8,
+      font: regular,
+      color: statusColor,
     });
 
     cursorY -= rowH;

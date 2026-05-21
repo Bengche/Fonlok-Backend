@@ -197,7 +197,7 @@ async function runInvoiceReminders() {
                 </div>
                 <div style="padding:24px;">
                   <h2 style="color:${urgencyColors[level]};margin:0 0 12px;">
-                    ${level === 3 ? "⚠️ " : ""}${subjects[level]}
+                    ${subjects[level]}
                   </h2>
                   <p style="color:#475569;">${intros[level]}</p>
 
@@ -461,7 +461,7 @@ async function runDisputeEscalation() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JOB 3 — Weekly user digest (Fridays)
+// JOB 3  -  Weekly user digest (Fridays)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function runWeeklyDigest() {

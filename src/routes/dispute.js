@@ -788,7 +788,7 @@ router.post(
         if (alreadyReleased.length > 0) {
           console.warn(
             `⚠️  Dispute ${dispute.invoicenumber}: ${alreadyReleased.length} milestone(s) already ` +
-              `released (IDs: ${alreadyReleased.map((m) => m.id).join(", ")}) — excluded from payout.`,
+              `released (IDs: ${alreadyReleased.map((m) => m.id).join(", ")})  -  excluded from payout.`,
           );
         }
 
@@ -878,7 +878,7 @@ router.post(
             amount: sellerShare.toString(),
             currency: "XAF",
             to: seller.phone,
-            description: `Dispute resolved (seller) — invoice ${invoice.invoicenumber}`,
+            description: `Dispute resolved (seller)  -  invoice ${invoice.invoicenumber}`,
             external_reference: `dispute-seller-${invoice.invoicenumber}-${Date.now()}`,
           },
           { headers: { Authorization: `Token ${auth.data.token}` } },
@@ -975,16 +975,16 @@ router.post(
           await sgMail.send({
             to: seller.email,
             from: process.env.VERIFIED_SENDER,
-            subject: `Dispute Resolved: Funds Released to You — Invoice ${invoice.invoicenumber} | Fonlok`,
+            subject: `Dispute Resolved: Funds Released to You  -  Invoice ${invoice.invoicenumber} | Fonlok`,
             html: emailWrap(
-              `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved — Funds Released to You</h2>
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved  -  Funds Released to You</h2>
               <p style="color:#475569;">Hello ${seller.name}, the admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and released funds to you.</p>
               ${emailTable([
                 ["Invoice", invoice.invoicenumber],
                 ["Effective Amount", `${effectiveAmount.toLocaleString()} XAF`],
                 [
                   "Fonlok Fee (2%)",
-                  `−${totalFeeD.toLocaleString()} XAF`,
+                  `-${totalFeeD.toLocaleString()} XAF`,
                   "color:#dc2626;",
                 ],
                 [
@@ -995,7 +995,7 @@ router.post(
                 ["Sent To", seller.phone],
               ])}`,
               {
-                footerNote: "Fonlok Escrow — dispute resolved in your favour.",
+                footerNote: "Fonlok Escrow  -  dispute resolved in your favour.",
               },
             ),
           });
@@ -1012,7 +1012,7 @@ router.post(
             await sgMail.send({
               to: gR.rows[0].email,
               from: process.env.VERIFIED_SENDER,
-              subject: `Dispute Update — Invoice ${invoice.invoicenumber} | Fonlok`,
+              subject: `Dispute Update  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved</h2>
                 <p style="color:#475569;">The admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and decided to release the funds to the seller.</p>
@@ -1062,7 +1062,7 @@ router.post(
             amount: refundAmount.toString(),
             currency: "XAF",
             to: buyer.momo_number,
-            description: `Dispute refund — invoice ${invoice.invoicenumber}`,
+            description: `Dispute refund  -  invoice ${invoice.invoicenumber}`,
             external_reference: `dispute-refund-${invoice.invoicenumber}-${Date.now()}`,
           },
           { headers: { Authorization: `Token ${authB.data.token}` } },
@@ -1133,9 +1133,9 @@ router.post(
             await sgMail.send({
               to: buyer.email,
               from: process.env.VERIFIED_SENDER,
-              subject: `Refund Processed — Invoice ${invoice.invoicenumber} | Fonlok`,
+              subject: `Refund Processed  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
-                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Processed — Funds Sent to You</h2>
+                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Processed  -  Funds Sent to You</h2>
                 <p style="color:#475569;">The admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and processed your refund.</p>
                 ${emailTable([
                   ["Invoice", invoice.invoicenumber],
@@ -1145,7 +1145,7 @@ router.post(
                   ],
                   [
                     "Fonlok Fee (2%)",
-                    `−${totalFeeD.toLocaleString()} XAF`,
+                    `-${totalFeeD.toLocaleString()} XAF`,
                     "color:#dc2626;",
                   ],
                   [
@@ -1171,9 +1171,9 @@ router.post(
             await sgMail.send({
               to: sR.rows[0].email,
               from: process.env.VERIFIED_SENDER,
-              subject: `Dispute Resolved: Refund Issued to Buyer — Invoice ${invoice.invoicenumber} | Fonlok`,
+              subject: `Dispute Resolved: Refund Issued to Buyer  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
-                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved — Refund Issued to Buyer</h2>
+                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved  -  Refund Issued to Buyer</h2>
                 <p style="color:#475569;">Hello ${sR.rows[0].name}, the admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and issued a refund to the buyer.</p>
                 <p style="color:#475569;">If you believe this was unfair, contact <a href="mailto:support@fonlok.com" style="color:#F59E0B;">support@fonlok.com</a>.</p>`,
                 {

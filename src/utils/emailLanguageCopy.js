@@ -37,7 +37,7 @@ const COPY = {
     },
     invoicePaid: {
       subject: (invoiceNumber) =>
-        `✅ Invoice Paid — Please Deliver | Invoice ${invoiceNumber} | Fonlok`,
+        `Invoice Paid - Please Deliver | Invoice ${invoiceNumber} | Fonlok`,
       title: "Your Invoice Has Been Paid",
       body: (buyerName, sellerFirstName) =>
         `Hi ${sellerFirstName}, great news! <strong>${buyerName}</strong> has paid your invoice and the funds are now held securely in Fonlok escrow.`,
@@ -112,11 +112,11 @@ const COPY = {
         "Thank you for using Fonlok. This email confirms your payout has been processed. Please keep this receipt for your records.",
     },
     disputeOpened: {
-      adminSubject: "URGENT: Dispute Opened — Admin Review Required",
+      adminSubject: "URGENT: Dispute Opened - Admin Review Required",
       sellerSubject: (invoiceNumber) =>
-        `Dispute Opened — Invoice ${invoiceNumber}`,
+        `Dispute Opened - Invoice ${invoiceNumber}`,
       buyerSubject: (invoiceNumber) =>
-        `Dispute Opened — Invoice ${invoiceNumber}`,
+        `Dispute Opened - Invoice ${invoiceNumber}`,
       adminTitle: "A Dispute Has Been Opened",
       sellerTitle: "A Dispute Has Been Opened On Your Invoice",
       buyerTitle: "Your Dispute Has Been Opened",
@@ -129,7 +129,7 @@ const COPY = {
       button: "View Dispute Details",
     },
     weeklyDigest: {
-      subject: "📊 Your Weekly Revenue Report — Fonlok",
+      subject: "Your Weekly Revenue Report - Fonlok",
       title: "Your Weekly Revenue Report",
       subtitle: "Here's how you're doing on Fonlok this week.",
       invoicesPaid: "Invoices paid",
@@ -175,7 +175,7 @@ const COPY = {
     },
     invoicePaid: {
       subject: (invoiceNumber) =>
-        `✅ Facture payée — Veuillez livrer | Facture ${invoiceNumber} | Fonlok`,
+        `Facture payée - Veuillez livrer | Facture ${invoiceNumber} | Fonlok`,
       title: "Votre facture a été payée",
       body: (buyerName, sellerFirstName) =>
         `Bonjour ${sellerFirstName}, bonne nouvelle ! <strong>${buyerName}</strong> a payé votre facture et les fonds sont maintenant conservés en toute sécurité en séquestre Fonlok.`,
@@ -251,11 +251,11 @@ const COPY = {
         "Merci d'utiliser Fonlok. Cet e-mail confirme que votre paiement a été traité. Veuillez conserver ce reçu pour vos dossiers.",
     },
     disputeOpened: {
-      adminSubject: "URGENT : Litige ouvert — Révision administrative requise",
+      adminSubject: "URGENT : Litige ouvert - Révision administrative requise",
       sellerSubject: (invoiceNumber) =>
-        `Litige ouvert — Facture ${invoiceNumber}`,
+        `Litige ouvert - Facture ${invoiceNumber}`,
       buyerSubject: (invoiceNumber) =>
-        `Litige ouvert — Facture ${invoiceNumber}`,
+        `Litige ouvert - Facture ${invoiceNumber}`,
       adminTitle: "Un litige a été ouvert",
       sellerTitle: "Un litige a été ouvert sur votre facture",
       buyerTitle: "Votre litige a été ouvert",
@@ -268,7 +268,7 @@ const COPY = {
       button: "Voir les détails du litige",
     },
     weeklyDigest: {
-      subject: "📊 Votre rapport de revenu hebdomadaire — Fonlok",
+      subject: "Votre rapport de revenu hebdomadaire - Fonlok",
       title: "Votre rapport de revenu hebdomadaire",
       subtitle: "Voici comment vous vous débrouillez sur Fonlok cette semaine.",
       invoicesPaid: "Factures payées",

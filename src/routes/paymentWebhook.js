@@ -35,15 +35,15 @@ const generate8CharCode = () => {
 // Called by both the Campay webhook AND the frontend poll endpoint so that
 // payments are processed regardless of which path fires first.
 //
-// Returns: "done"         â€” fully processed right now
-//          "already_done" â€” idempotency guard hit (was processed earlier)
-//          "no_payment"   â€” no matching payments row found
+// Returns: "done"         - fully processed right now
+//          "already_done" - idempotency guard hit (was processed earlier)
+//          "no_payment"   - no matching payments row found
 export async function processSuccessfulPayment(paymentUUID) {
   // ── Atomic idempotency claim (race-condition safe) ──────────────────────────────────────────
   // INSERT … ON CONFLICT DO NOTHING is a single atomic DB operation.
   // If two concurrent webhook retries reach here simultaneously, exactly ONE
   // will get rowCount=1 and proceed; the other gets rowCount=0 and exits
-  // immediately — no double-charge, no duplicate emails, no infinite loops.
+  // immediately - no double-charge, no duplicate emails, no infinite loops.
   // This replaces the old SELECT-then-INSERT two-step which had a TOCTOU gap.
   const claim = await db.query(
     `INSERT INTO processed_payments (payment_uuid)
@@ -53,7 +53,7 @@ export async function processSuccessfulPayment(paymentUUID) {
   );
   if (claim.rowCount === 0) {
     console.log(
-      `Payment ${paymentUUID} already claimed — duplicate webhook ignored.`,
+      `Payment ${paymentUUID} already claimed - duplicate webhook ignored.`,
     );
     return "already_done";
   }
@@ -81,7 +81,7 @@ export async function processSuccessfulPayment(paymentUUID) {
   );
   if (alreadyProcessed.rows.length > 0) {
     console.log(
-      `Invoice ${invoiceId} already has a confirmation code — skipping.`,
+      `Invoice ${invoiceId} already has a confirmation code - skipping.`,
     );
     return "already_done";
   }
@@ -131,7 +131,7 @@ export async function processSuccessfulPayment(paymentUUID) {
     }
   }
 
-  // 6. Get buyer email (non-fatal â€” missing email skips emails but doesn't abort)
+  // 6. Get buyer email (non-fatal - missing email skips emails but doesn't abort)
   let buyerEmail = null;
   try {
     const guestResult = await db.query(
@@ -142,7 +142,7 @@ export async function processSuccessfulPayment(paymentUUID) {
       buyerEmail = guestResult.rows[0].email;
     } else {
       console.warn(
-        `âš ï¸  No guest row for invoice ${invoice_number} â€” skipping buyer email.`,
+        `âš ï¸  No guest row for invoice ${invoice_number} - skipping buyer email.`,
       );
     }
   } catch (guestErr) {
@@ -150,8 +150,10 @@ export async function processSuccessfulPayment(paymentUUID) {
   }
 
   // 7. Send confirmation email + receipt to buyer
+  // Declared at function scope so step 8 (chat invite) can reference it too.
+  let buyerLanguage = "en";
   if (buyerEmail) {
-    const buyerLanguage = await getUserEmailLanguageByEmail(buyerEmail);
+    buyerLanguage = await getUserEmailLanguageByEmail(buyerEmail);
     let buyerPdfAttachment = null;
     try {
       const pdfBuffer = await generateReceiptPdf(invoice_number, buyerLanguage);
@@ -326,13 +328,13 @@ export async function processSuccessfulPayment(paymentUUID) {
     }
   }
 
-  // 9. Notify seller — in-app bell + push + email
+  // 9. Notify seller - in-app bell + push + email
   // ─────────────────────────────────────────────────────────────────────────
   // In-app / push notification (non-fatal)
   notifyUser(
     idUser,
     "invoice_paid",
-    "💰 Invoice Paid — Deliver Now",
+    "Invoice Paid - Deliver Now",
     `Invoice ${invoice_number} has been paid. ${payment.amount} XAF is secured in escrow. Please deliver what was ordered so funds can be released to you.`,
     { invoiceNumber: invoice_number, amount: payment.amount },
   );
@@ -433,7 +435,7 @@ router.post("/confirmation", async (req, res) => {
       const result = await processSuccessfulPayment(paymentUUID);
       console.log(`Webhook processing result: ${result}`);
     } else {
-      console.log(`Payment status was ${status} â€” no action taken.`);
+      console.log(`Payment status was ${status} - no action taken.`);
     }
 
     return res.status(200).send("OK");
@@ -455,7 +457,7 @@ router.get("/poll/:invoice_number", async (req, res) => {
   const { invoice_number } = req.params;
 
   try {
-    // Fast path â€” check DB first
+    // Fast path - check DB first
     const invoiceResult = await db.query(
       "SELECT status FROM invoices WHERE invoicenumber = $1",
       [invoice_number],
@@ -468,7 +470,7 @@ router.get("/poll/:invoice_number", async (req, res) => {
       return res.json({ status: dbStatus });
     }
 
-    // Slow path â€” get the latest payment UUID and ask Campay
+    // Slow path - get the latest payment UUID and ask Campay
     const paymentResult = await db.query(
       `SELECT p.* FROM payments p
        JOIN invoices i ON i.id = p.invoiceid

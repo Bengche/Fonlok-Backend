@@ -26,7 +26,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 // When there is no referral:
 //   Fonlok keeps the full 2% (PLATFORM_FEE_RATE + REFERRAL_FEE_RATE)
 //
-// In both cases the seller always receives gross âˆ’ 2%.  The only difference is
+// In both cases the seller always receives gross - 2%.  The only difference is
 // where the 0.5% portion goes when a referrer exists.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PLATFORM_FEE_RATE = 0.015; // 1.5% &mdash; Fonlok's cut
@@ -53,7 +53,7 @@ function renderPage({
 } = {}) {
   const palette = {
     success: { accent: "#16a34a", bg: "#f0fdf4", icon: "âœ“" },
-    error: { accent: "#dc2626", bg: "#fef2f2", icon: "âœ—" },
+    error: { accent: "#dc2626", bg: "#fef2f2", icon: "âœ - " },
     warning: { accent: "#d97706", bg: "#fffbeb", icon: "âš " },
     info: { accent: "#0F1F3D", bg: "#f8fafc", icon: "i" },
   };
@@ -77,7 +77,7 @@ function renderPage({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${title} â€” Fonlok</title>
+  <title>${title} - Fonlok</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${bg};min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
@@ -160,14 +160,14 @@ const executePayout = async (invoiceId) => {
   const referrerId = referrerCheck.rows[0]?.referred_by ?? null;
   const hasReferral = referrerId !== null;
 
-  // Seller always receives gross âˆ’ 2%.  When a referrer exists, Fonlok keeps
+  // Seller always receives gross - 2%.  When a referrer exists, Fonlok keeps
   // only 1.5% and the 0.5% remainder goes to the referrer.
   const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5%
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2%
-  const sellerReceives = grossAmount - totalFee; // always gross âˆ’ 2%
+  const sellerReceives = grossAmount - totalFee; // always gross - 2%
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -299,7 +299,7 @@ const executePayout = async (invoiceId) => {
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
         [
-          sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+          sellerLanguage === "fr" ? "Num&eacute;ro de facture" : "Invoice Number",
           invoiceRow.invoicenumber,
         ],
         [
@@ -307,7 +307,7 @@ const executePayout = async (invoiceId) => {
           invoiceRow.invoicename,
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
-        [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
+        [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
         [
           payoutCopy.amountSent,
           `${sellerReceives} XAF`,
@@ -398,7 +398,7 @@ const executePayoutLink = async (invoiceId) => {
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5%
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2%
-  const sellerReceives = grossAmount - totalFee; // gross âˆ’ 2%
+  const sellerReceives = grossAmount - totalFee; // gross - 2%
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -523,7 +523,7 @@ const executePayoutLink = async (invoiceId) => {
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
         [
-          sellerLanguage === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+          sellerLanguage === "fr" ? "Num&eacute;ro de facture" : "Invoice Number",
           invoiceRow.invoicenumber,
         ],
         [
@@ -531,7 +531,7 @@ const executePayoutLink = async (invoiceId) => {
           invoiceRow.invoicename,
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
-        [feeLabel, `âˆ’${totalFee} XAF`, "color:#dc2626;"],
+        [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
         [
           payoutCopy.amountSent,
           `${sellerReceives} XAF`,
@@ -696,7 +696,7 @@ router.get("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // Token is valid â€” show the confirmation page instead of executing immediately
+    // Token is valid - show the confirmation page instead of executing immediately
     res.send(
       renderPage({
         type: "warning",
@@ -787,7 +787,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // Execute the payout â€” pass the invoice id from the token (authoritative)
+    // Execute the payout - pass the invoice id from the token (authoritative)
     await executePayoutLink(userInvoiceId);
 
     res.send(
@@ -811,7 +811,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
   }
 });
 
-// --- METHOD 3a: MILESTONE RELEASE â€” Direct JSON API (buyer dashboard UI) ---
+// --- METHOD 3a: MILESTONE RELEASE - Direct JSON API (buyer dashboard UI) ---
 // POST /release-milestone/confirm
 // Body: { invoice_number, buyer_token, milestone_id }
 //
@@ -848,7 +848,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
     }
     const milestone = msResult.rows[0];
 
-    // 3. Status guards â€” give precise errors before touching the DB lock
+    // 3. Status guards - give precise errors before touching the DB lock
     if (milestone.status === "released") {
       return res
         .status(400)
@@ -879,7 +879,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
     }
     const seller = sellerResult.rows[0];
 
-    // 5. Atomic lock â€” prevents double-release from concurrent requests
+    // 5. Atomic lock - prevents double-release from concurrent requests
     const milestoneLock = await db.query(
       `UPDATE invoice_milestones
           SET status        = 'released',
@@ -1001,7 +1001,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         milestone.invoice_id,
       ]);
       console.log(
-        `âœ… All milestones released â€” invoice ${invoice.invoicenumber} marked completed.`,
+        `âœ… All milestones released - invoice ${invoice.invoicenumber} marked completed.`,
       );
     }
 
@@ -1029,7 +1029,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
       const sellerMsg = {
         to: seller.email,
         from: process.env.VERIFIED_SENDER,
-        subject: `Milestone Payment Released â€” ${milestone.label} | Fonlok`,
+        subject: `Milestone Payment Released - ${milestone.label} | Fonlok`,
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
           <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${invoice.invoicename}</strong> and your payment has been processed.</p>
@@ -1037,7 +1037,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
             ["Invoice", invoice.invoicenumber],
             ["Milestone", milestone.label],
             ["Gross Amount", `${milestoneAmount} XAF`],
-            [msFeeLabel, `âˆ’${fonlokFee} XAF`, "color:#dc2626;"],
+            [msFeeLabel, `-${fonlokFee} XAF`, "color:#dc2626;"],
             [
               "Amount Sent to You",
               `${sellerReceives} XAF`,
@@ -1085,7 +1085,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
   }
 });
 
-// --- METHOD 3b: MILESTONE RELEASE â€” Authenticated Buyer (logged-in account) ---
+// --- METHOD 3b: MILESTONE RELEASE - Authenticated Buyer (logged-in account) ---
 // POST /release-milestone/by-user
 // Body: { milestone_id }
 // Auth: Bearer JWT (Fonlok user account)
@@ -1163,7 +1163,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
     }
     const seller = sellerResult.rows[0];
 
-    // 7. Atomic lock â€” prevents double-release from concurrent requests
+    // 7. Atomic lock - prevents double-release from concurrent requests
     const milestoneLock = await db.query(
       `UPDATE invoice_milestones
           SET status        = 'released',
@@ -1310,7 +1310,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
         from: process.env.VERIFIED_SENDER,
         subject: payoutCopy.subject(invoice.invoicenumber),
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${milestone.label} — ${payoutCopy.title}</h2>
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${milestone.label} - ${payoutCopy.title}</h2>
           <p style="color:#475569;">${payoutCopy.body(seller.name)}</p>
           ${emailTable([
             [
@@ -1319,7 +1319,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             ],
             [sellerLanguage === "fr" ? "Jalon" : "Milestone", milestone.label],
             [payoutCopy.grossAmount, `${milestoneAmount} XAF`],
-            [msFeeLabelLocalized, `\u2212${totalFee} XAF`, "color:#dc2626;"],
+            [msFeeLabelLocalized, `-${totalFee} XAF`, "color:#dc2626;"],
             [
               payoutCopy.amountSent,
               `${sellerReceives} XAF`,
