@@ -14,22 +14,24 @@ router.get("/history/:userid", async (req, res) => {
   const userId = req.params.userid;
 
   try {
-    // 1. Get all payouts received as a seller
-    //    payouts are not linked to a specific invoice in the schema,
-    //    so we return them directly without a JOIN to avoid a cartesian product.
+    // 1. Get all payouts received as a seller.
+    //    LEFT JOIN invoices on invoice_number so we can surface the real
+    //    invoice name, invoice number, and gross amount alongside the net payout.
     const sellerTransactions = await db.query(
-      `SELECT 
-        id,
+      `SELECT DISTINCT ON (payouts.id)
+        payouts.id,
         'payout' AS transaction_type,
-        amount,
-        status,
-        createdat,
-        'Payout received' AS invoicename,
-        '' AS invoicenumber,
-        'XAF' AS currency
+        payouts.amount,
+        payouts.status,
+        payouts.createdat,
+        COALESCE(invoices.invoicename, 'Payout') AS invoicename,
+        COALESCE(payouts.invoice_number, '') AS invoicenumber,
+        'XAF' AS currency,
+        invoices.amount AS gross_amount
        FROM payouts
-       WHERE userid = $1
-       ORDER BY createdat DESC`,
+       LEFT JOIN invoices ON invoices.invoicenumber = payouts.invoice_number
+       WHERE payouts.userid = $1
+       ORDER BY payouts.id, payouts.createdat DESC`,
       [userId],
     );
 
@@ -45,7 +47,8 @@ router.get("/history/:userid", async (req, res) => {
         payments.createdat,
         invoices.invoicename,
         invoices.invoicenumber,
-        invoices.currency
+        invoices.currency,
+        invoices.amount AS gross_amount
        FROM payments
        JOIN invoices ON invoices.id = payments.invoiceid
        JOIN guests ON guests.invoicenumber = invoices.invoicenumber

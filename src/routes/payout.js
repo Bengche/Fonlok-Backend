@@ -52,9 +52,9 @@ function renderPage({
   note,
 } = {}) {
   const palette = {
-    success: { accent: "#16a34a", bg: "#f0fdf4", icon: "âœ“" },
-    error: { accent: "#dc2626", bg: "#fef2f2", icon: "âœ - " },
-    warning: { accent: "#d97706", bg: "#fffbeb", icon: "âš " },
+    success: { accent: "#16a34a", bg: "#f0fdf4", icon: "&#10003;" },
+    error: { accent: "#dc2626", bg: "#fef2f2", icon: "&#10007;" },
+    warning: { accent: "#d97706", bg: "#fffbeb", icon: "!" },
     info: { accent: "#0F1F3D", bg: "#f8fafc", icon: "i" },
   };
   const { accent, bg, icon } = palette[type] ?? palette.info;
@@ -705,7 +705,7 @@ router.get("/verify-payout/:token/:id", async (req, res) => {
         warningBox:
           "<strong>This action cannot be undone.</strong><br>Only confirm if you have received your order and are fully satisfied. If there is an issue, contact the seller before proceeding.",
         formAction: `/api/verify-payout/${token}/${id}`,
-        formLabel: "âœ“ Yes, Release Funds to Seller",
+        formLabel: "Yes, Release Funds to Seller",
         note: "If you have not received your order or are not satisfied, do <strong>not</strong> click the button above.",
       }),
     );

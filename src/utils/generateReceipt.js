@@ -518,31 +518,61 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
   const tableY = amtBarY - 14;
   const rowH = 22;
   const labelColW = 160;
-  const rows = [
+
+  // Helper: split text into lines that fit within maxWidth
+  function wrapText(text, font, size, maxWidth) {
+    const words = text.split(" ");
+    const lines = [];
+    let current = "";
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(test, size) > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines.length ? lines : [""];
+  }
+
+  const valColX = margin + labelColW;
+  const valColW = contentW - labelColW - 10;
+  const descText = inv.description || "—";
+  const descLines = wrapText(descText, regular, 9, valColW);
+  const lineH = 13;
+  const descRowH = Math.max(rowH, descLines.length * lineH + 9);
+
+  const tableRows = [
     [
       copy.paymentType,
       inv.payment_type === "installment"
         ? copy.installmentMilestones
         : copy.oneTime,
+      false,
     ],
-    [copy.description, (inv.description || "—").substring(0, 78)],
-    [copy.currency, inv.currency],
-    [copy.invoiceStatus, copy.statusText(inv.status)],
+    [copy.description, null, true],
+    [copy.currency, inv.currency, false],
+    [copy.invoiceStatus, copy.statusText(inv.status), false],
   ];
   if (inv.expires_at)
-    rows.push([
+    tableRows.push([
       copy.expires,
       new Date(inv.expires_at).toLocaleDateString(dateLocale),
+      false,
     ]);
 
-  rows.forEach(([label, val], i) => {
-    const ry = tableY - i * rowH;
+  let tableAnchorY = tableY;
+  tableRows.forEach(([label, val, isDesc], i) => {
+    const thisRowH = isDesc ? descRowH : rowH;
+    const ry = tableAnchorY;
     if (i % 2 === 0)
       page.drawRectangle({
         x: margin,
-        y: ry - 6,
+        y: ry + 16 - thisRowH,
         width: contentW,
-        height: rowH,
+        height: thisRowH,
         color: lightGray,
         borderRadius: 2,
       });
@@ -553,19 +583,32 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
       font: bold,
       color: mutedText,
     });
-    page.drawText(val, {
-      x: margin + labelColW,
-      y: ry + 5,
-      size: 9,
-      font: regular,
-      color: darkText,
-    });
+    if (isDesc) {
+      descLines.forEach((line, li) => {
+        page.drawText(line, {
+          x: valColX,
+          y: ry + 5 - li * lineH,
+          size: 9,
+          font: regular,
+          color: darkText,
+        });
+      });
+    } else {
+      page.drawText(val, {
+        x: valColX,
+        y: ry + 5,
+        size: 9,
+        font: regular,
+        color: darkText,
+      });
+    }
+    tableAnchorY -= thisRowH;
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ── MILESTONES TABLE ──────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
-  let cursorY = tableY - rows.length * rowH - 24;
+  let cursorY = tableAnchorY - 24;
 
   if (milestones.length > 0) {
     page.drawText(copy.milestoneBreakdown, {
