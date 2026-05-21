@@ -462,7 +462,8 @@ app.listen(PORT, async () => {
         ADD COLUMN IF NOT EXISTS show_invoice_name  BOOLEAN     DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS invoice_name       TEXT        DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS invoice_amount     NUMERIC     DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS invoice_currency   VARCHAR(10) DEFAULT NULL;
+        ADD COLUMN IF NOT EXISTS invoice_currency   VARCHAR(10) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT NULL;
     `);
     logger.info("reviews enhancement columns ready");
   } catch (err) {

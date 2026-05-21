@@ -218,9 +218,16 @@ router.post(
         });
       }
 
-      // 3. Make sure the reviewer was actually the buyer on this invoice
+      // 3. Make sure the reviewer was actually the buyer on this invoice.
+      // Match on user_id when available; fall back to email match for buyers
+      // who paid without being logged in (user_id stored as NULL at payment time).
       const buyerCheck = await db.query(
-        "SELECT * FROM guests WHERE invoicenumber = $1 AND user_id = $2",
+        `SELECT * FROM guests
+         WHERE invoicenumber = $1
+           AND (
+             user_id = $2
+             OR email = (SELECT email FROM users WHERE id = $2)
+           )`,
         [invoice_number, reviewerId],
       );
       if (buyerCheck.rows.length === 0) {
@@ -229,18 +236,9 @@ router.post(
         });
       }
 
-      // 4. Prevent duplicate reviews on the same invoice
-      const duplicateCheck = await db.query(
-        "SELECT * FROM reviews WHERE reviewer_userid = $1 AND invoice_number = $2",
-        [reviewerId, invoice_number],
-      );
-      if (duplicateCheck.rows.length > 0) {
-        return res.status(409).json({
-          message: "You have already left a review for this transaction.",
-        });
-      }
-
-      // 5. Optionally attach invoice name for social proof
+      // 4. One review per buyer-seller pair.
+      // Same sentiment as the existing review → 409.
+      // Opposite sentiment (positive ↔ negative) → UPDATE the existing review.
       const invoiceRow = invoiceCheck.rows[0];
       const showInvoiceName = req.body.show_invoice_name === true;
       const invoiceName = showInvoiceName
@@ -251,7 +249,53 @@ router.post(
         ? invoiceRow.currency || null
         : null;
 
-      // 6. Save the review
+      const existingReview = await db.query(
+        "SELECT id, rating FROM reviews WHERE reviewer_userid = $1 AND seller_userid = $2",
+        [reviewerId, sellerId],
+      );
+
+      if (existingReview.rows.length > 0) {
+        const existing = existingReview.rows[0];
+        const existingIsPositive = existing.rating >= 4;
+        const newIsPositive = Number(rating) >= 4;
+
+        if (existingIsPositive === newIsPositive) {
+          return res.status(409).json({
+            message:
+              "You have already left a review of this type for this seller.",
+          });
+        }
+
+        // Opposite sentiment — update the existing review
+        await db.query(
+          `UPDATE reviews
+             SET rating            = $1,
+                 comment           = $2,
+                 show_invoice_name = $3,
+                 invoice_name      = $4,
+                 invoice_amount    = $5,
+                 invoice_currency  = $6,
+                 invoice_number    = $7,
+                 updated_at        = NOW()
+           WHERE reviewer_userid = $8 AND seller_userid = $9`,
+          [
+            rating,
+            comment || null,
+            showInvoiceName,
+            invoiceName,
+            invoiceAmount,
+            invoiceCurrency,
+            invoice_number,
+            reviewerId,
+            sellerId,
+          ],
+        );
+        return res
+          .status(200)
+          .json({ message: "Your review has been updated.", updated: true });
+      }
+
+      // 5. No prior review — insert
       await db.query(
         `INSERT INTO reviews
           (reviewer_userid, seller_userid, invoice_number, rating, comment,
@@ -262,7 +306,7 @@ router.post(
           sellerId,
           invoice_number,
           rating,
-          comment,
+          comment || null,
           showInvoiceName,
           invoiceName,
           invoiceAmount,
