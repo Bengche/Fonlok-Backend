@@ -39,7 +39,10 @@ router.get("/:username", async (req, res) => {
   try {
     // 1. Find the seller by username
     const userResult = await db.query(
-      "SELECT id, name, username, country, profilepicture, createdat, phone, kyc_status, preferred_email_language FROM users WHERE username = $1",
+      `SELECT id, name, username, country, profilepicture, createdat, phone,
+              kyc_status, preferred_email_language, email, bio,
+              COALESCE(tags, '{}') AS tags
+       FROM users WHERE username = $1`,
       [username],
     );
     if (userResult.rows.length === 0) {
@@ -48,8 +51,6 @@ router.get("/:username", async (req, res) => {
     const seller = userResult.rows[0];
 
     // 2. Get all delivered/completed invoices for this seller
-    // Status flow: paid → delivered (marked by seller) → completed (after payout)
-    // We count both so stats reflect reality regardless of payout timing.
     const invoicesResult = await db.query(
       `SELECT invoicename, amount, currency, status, createdat, delivered_at
        FROM invoices
@@ -58,14 +59,17 @@ router.get("/:username", async (req, res) => {
       [seller.id],
     );
 
-    // 3. Get all reviews for this seller
+    // 3. Get all reviews — pinned first, then newest
     const reviewsResult = await db.query(
-      `SELECT reviews.id, reviews.rating, reviews.comment, reviews.created_at,
-              COALESCE(NULLIF(TRIM(users.name), ''), users.username) AS reviewer_name
-       FROM reviews
-       JOIN users ON users.id = reviews.reviewer_userid
-       WHERE reviews.seller_userid = $1
-       ORDER BY reviews.created_at DESC`,
+      `SELECT r.id, r.rating, r.comment, r.created_at,
+              r.pinned, r.seller_reply, r.reply_created_at,
+              r.show_invoice_name, r.invoice_name, r.invoice_amount, r.invoice_currency,
+              COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS reviewer_name,
+              r.reviewer_userid
+       FROM reviews r
+       JOIN users u ON u.id = r.reviewer_userid
+       WHERE r.seller_userid = $1
+       ORDER BY r.pinned DESC, r.created_at DESC`,
       [seller.id],
     );
 
@@ -76,22 +80,29 @@ router.get("/:username", async (req, res) => {
     );
     const averageRating = avgResult.rows[0].average || 0;
 
-    // 5. Count total completed transactions (delivered invoices)
+    // 5. Count total completed transactions
     const completedCount = invoicesResult.rows.length;
 
-    // 6. Total amount secured via completed/delivered invoices
+    // 6. Total amount secured
     const securedResult = await db.query(
       "SELECT COALESCE(SUM(amount), 0) AS total FROM invoices WHERE userid = $1 AND status IN ('delivered', 'completed')",
       [seller.id],
     );
     const totalSecured = parseFloat(securedResult.rows[0].total) || 0;
 
-    // 7. Number of disputes filed for this seller's invoices
+    // 7. Dispute count
     const disputeResult = await db.query(
       "SELECT COUNT(*) AS count FROM disputes WHERE invoicenumber IN (SELECT invoicenumber FROM invoices WHERE userid = $1)",
       [seller.id],
     );
     const disputeCount = parseInt(disputeResult.rows[0].count, 10) || 0;
+
+    // 8. Verified sub-badges — derive from existing DB fields
+    const verifiedBadges = {
+      id: seller.kyc_status === "approved",
+      phone: Boolean(seller.phone),
+      email: Boolean(seller.email),
+    };
 
     return res.status(200).json({
       seller,
@@ -101,6 +112,7 @@ router.get("/:username", async (req, res) => {
       completedCount,
       totalSecured,
       disputeCount,
+      verifiedBadges,
     });
   } catch (error) {
     console.log(error.message);
@@ -228,10 +240,21 @@ router.post(
         });
       }
 
-      // 5. Save the review
+      // 5. Optionally attach invoice name for social proof
+      const invoiceRow = invoiceCheck.rows[0];
+      const showInvoiceName = req.body.show_invoice_name === true;
+      const invoiceName   = showInvoiceName ? (invoiceRow.invoicename || null) : null;
+      const invoiceAmount = showInvoiceName ? (invoiceRow.amount || null) : null;
+      const invoiceCurrency = showInvoiceName ? (invoiceRow.currency || null) : null;
+
+      // 6. Save the review
       await db.query(
-        "INSERT INTO reviews (reviewer_userid, seller_userid, invoice_number, rating, comment) VALUES ($1, $2, $3, $4, $5)",
-        [reviewerId, sellerId, invoice_number, rating, comment],
+        `INSERT INTO reviews
+          (reviewer_userid, seller_userid, invoice_number, rating, comment,
+           show_invoice_name, invoice_name, invoice_amount, invoice_currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [reviewerId, sellerId, invoice_number, rating, comment,
+         showInvoiceName, invoiceName, invoiceAmount, invoiceCurrency],
       );
 
       return res
@@ -341,6 +364,107 @@ router.post(
       return res
         .status(500)
         .json({ message: "Failed to send deal request. Please try again." });
+    }
+  },
+);
+
+// ── PATCH /profile/bio-tags ──────────────────────────────────────────────────
+// Authenticated sellers update their public bio and service tags.
+router.patch(
+  "/bio-tags",
+  authMiddleware,
+  [
+    body("bio")
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ max: 160 })
+      .withMessage("Bio must be 160 characters or fewer."),
+    body("tags")
+      .optional()
+      .isArray({ max: 10 })
+      .withMessage("Max 10 tags allowed."),
+    body("tags.*")
+      .trim()
+      .isLength({ min: 1, max: 40 })
+      .withMessage("Each tag must be between 1 and 40 characters."),
+  ],
+  validate,
+  async (req, res) => {
+    const userId = req.user.id;
+    const { bio, tags } = req.body;
+    try {
+      await db.query(
+        "UPDATE users SET bio = $1, tags = $2 WHERE id = $3",
+        [bio || null, tags || [], userId],
+      );
+      return res.status(200).json({ ok: true, bio: bio || null, tags: tags || [] });
+    } catch (error) {
+      console.log(error.message);
+      return res.status(500).json({ message: "Failed to save profile info. Please try again." });
+    }
+  },
+);
+
+// ── PATCH /profile/review/:id/pin ────────────────────────────────────────────
+// Seller toggles pin status on one of their received reviews.
+router.patch("/review/:id/pin", authMiddleware, async (req, res) => {
+  const sellerId = req.user.id;
+  const reviewId = parseInt(req.params.id, 10);
+  if (isNaN(reviewId))
+    return res.status(400).json({ message: "Invalid review ID." });
+  try {
+    // Verify the review belongs to this seller
+    const check = await db.query(
+      "SELECT id, pinned FROM reviews WHERE id = $1 AND seller_userid = $2",
+      [reviewId, sellerId],
+    );
+    if (check.rows.length === 0)
+      return res.status(404).json({ message: "Review not found." });
+    const newPinned = !check.rows[0].pinned;
+    await db.query("UPDATE reviews SET pinned = $1 WHERE id = $2", [newPinned, reviewId]);
+    return res.status(200).json({ ok: true, pinned: newPinned });
+  } catch (error) {
+    console.log(error.message);
+    return res.status(500).json({ message: "Failed to update pin. Please try again." });
+  }
+});
+
+// ── PATCH /profile/review/:id/reply ──────────────────────────────────────────
+// Seller posts or updates a public reply to a review.
+router.patch(
+  "/review/:id/reply",
+  authMiddleware,
+  [
+    body("reply")
+      .trim()
+      .notEmpty()
+      .withMessage("Reply cannot be empty.")
+      .isLength({ max: 800 })
+      .withMessage("Reply must be 800 characters or fewer.")
+      .escape(),
+  ],
+  validate,
+  async (req, res) => {
+    const sellerId = req.user.id;
+    const reviewId = parseInt(req.params.id, 10);
+    if (isNaN(reviewId))
+      return res.status(400).json({ message: "Invalid review ID." });
+    const { reply } = req.body;
+    try {
+      const check = await db.query(
+        "SELECT id FROM reviews WHERE id = $1 AND seller_userid = $2",
+        [reviewId, sellerId],
+      );
+      if (check.rows.length === 0)
+        return res.status(404).json({ message: "Review not found." });
+      await db.query(
+        "UPDATE reviews SET seller_reply = $1, reply_created_at = NOW() WHERE id = $2",
+        [reply, reviewId],
+      );
+      return res.status(200).json({ ok: true });
+    } catch (error) {
+      console.log(error.message);
+      return res.status(500).json({ message: "Failed to save reply. Please try again." });
     }
   },
 );

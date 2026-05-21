@@ -137,6 +137,22 @@ const COPY = {
       pendingMilestones: "Pending milestones",
       button: "Open Revenue & Stats",
     },
+    fundsReleased: {
+      subject: (invoiceNumber) =>
+        `Funds Released — Invoice ${invoiceNumber} | Fonlok`,
+      title: "You've Released the Funds",
+      body: (sellerName, invoiceName) =>
+        `You have successfully released the escrowed funds for <strong>${invoiceName}</strong>. The seller <strong>${sellerName}</strong> has been notified and the payment is on its way to their account.`,
+      grossAmount: "Gross Amount",
+      feeLabel: "Platform Fee (2%)",
+      sellerReceived: "Seller Received",
+      reviewTitle: "Share Your Experience",
+      reviewBody:
+        "How was your experience with this seller? Your review helps others in the Fonlok community make informed decisions.",
+      reviewButton: "Leave a Review",
+      footerNote:
+        "You received this email because you released escrow funds on Fonlok.",
+    },
   },
   fr: {
     resetPassword: {
@@ -275,6 +291,22 @@ const COPY = {
       fundsReceived: "Fonds reçus",
       pendingMilestones: "Jalons en attente",
       button: "Ouvrir Revenus & Statistiques",
+    },
+    fundsReleased: {
+      subject: (invoiceNumber) =>
+        `Fonds libérés — Facture ${invoiceNumber} | Fonlok`,
+      title: "Vous avez libéré les fonds",
+      body: (sellerName, invoiceName) =>
+        `Vous avez libéré avec succès les fonds mis en séquestre pour <strong>${invoiceName}</strong>. Le vendeur <strong>${sellerName}</strong> a été notifié et le paiement est en route vers son compte.`,
+      grossAmount: "Montant brut",
+      feeLabel: "Frais de plateforme (2 %)",
+      sellerReceived: "Vendeur a reçu",
+      reviewTitle: "Partagez votre expérience",
+      reviewBody:
+        "Comment s'est passée votre expérience avec ce vendeur ? Votre avis aide d'autres membres de la communauté Fonlok à prendre de meilleures décisions.",
+      reviewButton: "Laisser un avis",
+      footerNote:
+        "Vous avez reçu cet e-mail parce que vous avez libéré des fonds en séquestre sur Fonlok.",
     },
   },
 };

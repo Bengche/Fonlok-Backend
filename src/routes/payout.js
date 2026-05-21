@@ -339,6 +339,47 @@ const executePayout = async (invoiceId) => {
     );
   }
 
+  // ── Step 9: Buyer release confirmation email with review link (non-fatal) ──
+  try {
+    const buyerResult = await db.query(
+      "SELECT email, user_id FROM guests WHERE invoicenumber = $1 LIMIT 1",
+      [invoiceRow.invoicenumber],
+    );
+    if (buyerResult.rows.length > 0) {
+      const buyer = buyerResult.rows[0];
+      const buyerLang = buyer.user_id
+        ? await getUserEmailLanguageById(buyer.user_id)
+        : "en";
+      const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
+      const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
+      await sgMail.send({
+        to: buyer.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: releasedCopy.subject(invoiceRow.invoicenumber),
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+          <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
+          ${emailTable([
+            [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoiceRow.invoicenumber],
+            [buyerLang === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+            [releasedCopy.grossAmount, `${grossAmount} XAF`],
+            [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+          ])}
+          <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+            <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
+            <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
+            ${emailButton(reviewLink, releasedCopy.reviewButton)}
+          </div>`,
+          { footerNote: releasedCopy.footerNote },
+        ),
+      });
+      console.log(`\u2705 Buyer release confirmation email sent to ${buyer.email}`);
+    }
+  } catch (buyerEmailErr) {
+    console.error("\u26a0\ufe0f Buyer release email error (payout succeeded):", buyerEmailErr.message);
+  }
+
   return true;
 };
 
@@ -563,7 +604,54 @@ const executePayoutLink = async (invoiceId) => {
     );
   }
 
-  return true;
+  // ── Step 9: Buyer release confirmation email with review link (non-fatal) ──
+  try {
+    const buyerResult = await db.query(
+      "SELECT email, user_id FROM guests WHERE invoicenumber = $1 LIMIT 1",
+      [invoiceRow.invoicenumber],
+    );
+    if (buyerResult.rows.length > 0) {
+      const buyer = buyerResult.rows[0];
+      const buyerLang = buyer.user_id
+        ? await getUserEmailLanguageById(buyer.user_id)
+        : "en";
+      const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
+      const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
+      await sgMail.send({
+        to: buyer.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: releasedCopy.subject(invoiceRow.invoicenumber),
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+          <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
+          ${emailTable([
+            [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoiceRow.invoicenumber],
+            [buyerLang === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+            [releasedCopy.grossAmount, `${grossAmount} XAF`],
+            [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+          ])}
+          <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+            <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
+            <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
+            ${emailButton(reviewLink, releasedCopy.reviewButton)}
+          </div>`,
+          { footerNote: releasedCopy.footerNote },
+        ),
+      });
+      console.log(`\u2705 Buyer release confirmation email sent to ${buyer.email}`);
+    }
+  } catch (buyerEmailErr) {
+    console.error("\u26a0\ufe0f Buyer release email error (payout succeeded):", buyerEmailErr.message);
+  }
+
+  return {
+    invoiceNumber: invoiceRow.invoicenumber,
+    sellerUsername: invoiceUser.username,
+    sellerReceives,
+    grossAmount,
+    invoiceName: invoiceRow.invoicename,
+  };
 };
 
 // --- METHOD 1: RELEASE BY CODE (Manual Request by seller) ---
@@ -788,14 +876,20 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
     }
 
     // Execute the payout - pass the invoice id from the token (authoritative)
-    await executePayoutLink(userInvoiceId);
+    const payoutResult = await executePayoutLink(userInvoiceId);
+
+    const reviewHref = payoutResult.sellerUsername
+      ? `${process.env.FRONTEND_URL}/review/${payoutResult.sellerUsername}/${payoutResult.invoiceNumber}`
+      : null;
 
     res.send(
       renderPage({
         type: "success",
         title: "Funds Released",
-        body: "You have successfully released the escrowed funds to the seller. The seller will receive a notification and payment confirmation by email.",
-        note: "Thank you for using Fonlok. You can close this page.",
+        body: "You have successfully released the escrowed funds to the seller. The seller has been notified and payment is on its way to their account.",
+        ctaHref: reviewHref,
+        ctaLabel: "Leave a Review for This Seller",
+        note: "Thank you for using Fonlok. You may close this page.",
       }),
     );
   } catch (error) {
@@ -1069,12 +1163,52 @@ router.post("/release-milestone/confirm", async (req, res) => {
       );
     }
 
+    // 13. Buyer milestone release confirmation email (non-fatal)
+    try {
+      const buyerRow = guestResult.rows[0];
+      const buyerLang = buyerRow.user_id
+        ? await getUserEmailLanguageById(buyerRow.user_id)
+        : "en";
+      const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
+      const milestoneAmt = Number(milestone.amount);
+      const msTotalFee = Math.floor(milestoneAmt * TOTAL_FEE_RATE);
+      const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${invoice.invoicenumber}`;
+      await sgMail.send({
+        to: buyerRow.email,
+        from: process.env.VERIFIED_SENDER,
+        subject: releasedCopy.subject(invoice.invoicenumber),
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+          <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
+          ${emailTable([
+            [buyerLang === "fr" ? "Num\u00e9ro de facture" : "Invoice Number", invoice.invoicenumber],
+            [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
+            [releasedCopy.grossAmount, `${milestoneAmt} XAF`],
+            [releasedCopy.feeLabel, `-${msTotalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+          ])}
+          <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+            <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
+            <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
+            ${emailButton(reviewLink, releasedCopy.reviewButton)}
+          </div>`,
+          { footerNote: releasedCopy.footerNote },
+        ),
+      });
+      console.log(`✅ Buyer milestone release email sent to ${buyerRow.email}`);
+    } catch (buyerEmailErr) {
+      console.error("⚠️ Buyer milestone release email error (confirm):", buyerEmailErr.message);
+    }
+
     return res.status(200).json({
       message: `Payment released successfully. ${sellerReceives.toLocaleString()} XAF sent to the seller.`,
       sellerReceives,
       milestoneLabel: milestone.label,
       allComplete: remaining === 0,
       remaining,
+      sellerUsername: seller.username,
+      invoiceNumber: invoice.invoicenumber,
+      invoiceName: invoice.invoicename,
     });
   } catch (error) {
     console.error("Milestone direct release failed:", error.message);
@@ -1348,12 +1482,54 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       );
     }
 
+    // 15. Buyer milestone release confirmation email (non-fatal)
+    try {
+      const buyerUserResult = await db.query(
+        "SELECT email, id FROM users WHERE id = $1",
+        [buyerUserId],
+      );
+      if (buyerUserResult.rows.length > 0) {
+        const buyerUser = buyerUserResult.rows[0];
+        const buyerLang = await getUserEmailLanguageById(buyerUser.id);
+        const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
+        const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${invoice.invoicenumber}`;
+        await sgMail.send({
+          to: buyerUser.email,
+          from: process.env.VERIFIED_SENDER,
+          subject: releasedCopy.subject(invoice.invoicenumber),
+          html: emailWrap(
+            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+            <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
+            ${emailTable([
+              [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoice.invoicenumber],
+              [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
+              [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
+              [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+              [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            ])}
+            <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+              <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
+              <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
+              ${emailButton(reviewLink, releasedCopy.reviewButton)}
+            </div>`,
+            { footerNote: releasedCopy.footerNote },
+          ),
+        });
+        console.log(`✅ Buyer milestone release email sent to ${buyerUser.email}`);
+      }
+    } catch (buyerEmailErr) {
+      console.error("⚠️ Buyer milestone release email error (by-user):", buyerEmailErr.message);
+    }
+
     return res.status(200).json({
       message: `Payment released successfully. ${sellerReceives.toLocaleString()} XAF sent to the seller.`,
       sellerReceives,
       milestoneLabel: milestone.label,
       allComplete: remaining === 0,
       remaining,
+      sellerUsername: seller.username,
+      invoiceNumber: invoice.invoicenumber,
+      invoiceName: invoice.invoicename,
     });
   } catch (error) {
     console.error("Milestone user release failed:", error.message);
