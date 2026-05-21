@@ -243,9 +243,13 @@ router.post(
       // 5. Optionally attach invoice name for social proof
       const invoiceRow = invoiceCheck.rows[0];
       const showInvoiceName = req.body.show_invoice_name === true;
-      const invoiceName   = showInvoiceName ? (invoiceRow.invoicename || null) : null;
-      const invoiceAmount = showInvoiceName ? (invoiceRow.amount || null) : null;
-      const invoiceCurrency = showInvoiceName ? (invoiceRow.currency || null) : null;
+      const invoiceName = showInvoiceName
+        ? invoiceRow.invoicename || null
+        : null;
+      const invoiceAmount = showInvoiceName ? invoiceRow.amount || null : null;
+      const invoiceCurrency = showInvoiceName
+        ? invoiceRow.currency || null
+        : null;
 
       // 6. Save the review
       await db.query(
@@ -253,8 +257,17 @@ router.post(
           (reviewer_userid, seller_userid, invoice_number, rating, comment,
            show_invoice_name, invoice_name, invoice_amount, invoice_currency)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [reviewerId, sellerId, invoice_number, rating, comment,
-         showInvoiceName, invoiceName, invoiceAmount, invoiceCurrency],
+        [
+          reviewerId,
+          sellerId,
+          invoice_number,
+          rating,
+          comment,
+          showInvoiceName,
+          invoiceName,
+          invoiceAmount,
+          invoiceCurrency,
+        ],
       );
 
       return res
@@ -393,14 +406,19 @@ router.patch(
     const userId = req.user.id;
     const { bio, tags } = req.body;
     try {
-      await db.query(
-        "UPDATE users SET bio = $1, tags = $2 WHERE id = $3",
-        [bio || null, tags || [], userId],
-      );
-      return res.status(200).json({ ok: true, bio: bio || null, tags: tags || [] });
+      await db.query("UPDATE users SET bio = $1, tags = $2 WHERE id = $3", [
+        bio || null,
+        tags || [],
+        userId,
+      ]);
+      return res
+        .status(200)
+        .json({ ok: true, bio: bio || null, tags: tags || [] });
     } catch (error) {
       console.log(error.message);
-      return res.status(500).json({ message: "Failed to save profile info. Please try again." });
+      return res
+        .status(500)
+        .json({ message: "Failed to save profile info. Please try again." });
     }
   },
 );
@@ -421,11 +439,16 @@ router.patch("/review/:id/pin", authMiddleware, async (req, res) => {
     if (check.rows.length === 0)
       return res.status(404).json({ message: "Review not found." });
     const newPinned = !check.rows[0].pinned;
-    await db.query("UPDATE reviews SET pinned = $1 WHERE id = $2", [newPinned, reviewId]);
+    await db.query("UPDATE reviews SET pinned = $1 WHERE id = $2", [
+      newPinned,
+      reviewId,
+    ]);
     return res.status(200).json({ ok: true, pinned: newPinned });
   } catch (error) {
     console.log(error.message);
-    return res.status(500).json({ message: "Failed to update pin. Please try again." });
+    return res
+      .status(500)
+      .json({ message: "Failed to update pin. Please try again." });
   }
 });
 
@@ -464,7 +487,9 @@ router.patch(
       return res.status(200).json({ ok: true });
     } catch (error) {
       console.log(error.message);
-      return res.status(500).json({ message: "Failed to save reply. Please try again." });
+      return res
+        .status(500)
+        .json({ message: "Failed to save reply. Please try again." });
     }
   },
 );
