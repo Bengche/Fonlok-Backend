@@ -1137,37 +1137,82 @@ export async function generateStatementPdf(
 
   cursorY = headerY - 22;
   const rowH = 18;
+  const PAGE_BOTTOM = 102; // height reserved for footer (82px) + buffer
 
-  // Table rows
-  transactions.slice(0, 20).forEach((tx, i) => {
-    if (cursorY < margin + 120) {
-      // Stop if we're getting too close to footer
-      return;
+  // ── Multi-page helpers ────────────────────────────────────────────────────
+  let currentPage = page;
+  let pageNum = 1;
+
+  function drawPageFooter(p) {
+    const footerH = 82;
+    p.drawRectangle({ x: 0, y: 0, width, height: footerH, color: navy });
+    p.drawRectangle({ x: 0, y: footerH, width, height: 1.5, color: amber });
+    drawCentred(p, copy.footerStatement, {
+      cx: width / 2, y: 58, size: 7, font: regular, color: rgb(0.7, 0.78, 0.9),
+    });
+    drawCentred(p, `${copy.footerStatement2}  |  ${BRAND.domain}`, {
+      cx: width / 2, y: 44, size: 6.5, font: regular, color: rgb(0.55, 0.63, 0.76),
+    });
+    drawCentred(p, `Generated: ${new Date().toUTCString()}`, {
+      cx: width / 2, y: 28, size: 6.5, font: regular, color: rgb(0.5, 0.58, 0.72),
+    });
+    drawCentred(p, `Page ${pageNum}`, {
+      cx: width / 2, y: 14, size: 6.5, font: regular, color: rgb(0.5, 0.58, 0.72),
+    });
+  }
+
+  function drawTableRowHeader(p, startY) {
+    p.drawRectangle({
+      x: margin, y: startY - 20, width: contentW, height: 20, color: navy, borderRadius: 3,
+    });
+    colPositions.forEach(({ label, cx }) => {
+      drawCentred(p, label, { cx, y: startY - 10, size: 7.5, font: bold, color: white });
+    });
+    return startY - 22;
+  }
+
+  function addNewPage() {
+    pageNum++;
+    const p = pdfDoc.addPage([595.28, 841.89]);
+    const miniH = 40;
+    p.drawRectangle({ x: 0, y: height - miniH, width, height: miniH, color: navy });
+    p.drawRectangle({ x: 0, y: height - miniH, width, height: 2, color: amber });
+    p.drawText("Fonlok", {
+      x: margin, y: height - miniH + (miniH - 14) / 2, size: 14, font: bold, color: amber,
+    });
+    drawRight(p, copy.officialStatement, {
+      rx: width - margin, y: height - miniH + (miniH - 9) / 2, size: 9, font: bold, color: white,
+    });
+    currentPage = p;
+    let y = height - miniH - 16;
+    p.drawText(`${copy.transactionDetails} (cont.)`, {
+      x: margin, y, size: 9, font: bold, color: darkText,
+    });
+    y -= 12;
+    return drawTableRowHeader(p, y);
+  }
+
+  // ── Table rows (paginated) ────────────────────────────────────────────────
+  transactions.forEach((tx, i) => {
+    // Start a new page when too close to footer
+    if (cursorY - rowH < PAGE_BOTTOM) {
+      drawPageFooter(currentPage);
+      cursorY = addNewPage();
     }
 
-    // Alternate row background
+    // Alternating row background
     if (i % 2 === 0) {
-      page.drawRectangle({
-        x: margin,
-        y: cursorY - rowH,
-        width: contentW,
-        height: rowH,
-        color: lightGray,
+      currentPage.drawRectangle({
+        x: margin, y: cursorY - rowH, width: contentW, height: rowH, color: lightGray,
       });
     }
 
     const txDate = new Date(tx.createdat).toLocaleDateString(dateLocale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
+      day: "2-digit", month: "short", year: "numeric",
     });
 
-    page.drawText(txDate, {
-      x: margin + 10,
-      y: cursorY - 13,
-      size: 8,
-      font: regular,
-      color: darkText,
+    currentPage.drawText(txDate, {
+      x: margin + 10, y: cursorY - 13, size: 8, font: regular, color: darkText,
     });
 
     const desc = (
@@ -1175,58 +1220,34 @@ export async function generateStatementPdf(
         ? copy.payoutReceived
         : tx.invoicename || tx.invoicenumber || copy.transactionFallback
     ).substring(0, 25);
-    page.drawText(desc, {
-      x: margin + 125,
-      y: cursorY - 13,
-      size: 8,
-      font: regular,
-      color: darkText,
+
+    currentPage.drawText(desc, {
+      x: margin + 125, y: cursorY - 13, size: 8, font: regular, color: darkText,
     });
 
-    page.drawText(`${Number(tx.amount).toLocaleString()} ${tx.currency}`, {
-      x: margin + 330,
-      y: cursorY - 13,
-      size: 8,
-      font: regular,
-      color: darkText,
+    currentPage.drawText(`${Number(tx.amount).toLocaleString()} ${tx.currency}`, {
+      x: margin + 330, y: cursorY - 13, size: 8, font: regular, color: darkText,
     });
 
     const statusLabel = copy.statusText(tx.status || "pending");
     const statusColor =
       tx.status === "success" || tx.status === "paid" ? green : mutedText;
-    page.drawText(statusLabel, {
-      x: margin + 440,
-      y: cursorY - 13,
-      size: 8,
-      font: regular,
-      color: statusColor,
+    currentPage.drawText(statusLabel, {
+      x: margin + 440, y: cursorY - 13, size: 8, font: regular, color: statusColor,
     });
 
     cursorY -= rowH;
   });
 
-  if (transactions.length > 20) {
-    page.drawText(
-      `${copy.moreTransactions} ${transactions.length - 20} ${copy.moreTransactionsTail}`,
-      {
-        x: margin + 10,
-        y: cursorY - 10,
-        size: 7.5,
-        font: regular,
-        color: mutedText,
-      },
-    );
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // ── VERIFICATION SEAL (bottom-right) ───────────────────────────────────────
+  // ── VERIFICATION SEAL (bottom-right of last page) ──────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
   const sealCX = width - margin - 54;
   const sealCY = 136;
   const sealR1 = 50;
   const sealR2 = 38;
 
-  page.drawCircle({
+  currentPage.drawCircle({
     x: sealCX,
     y: sealCY,
     size: sealR1,
@@ -1234,7 +1255,7 @@ export async function generateStatementPdf(
     borderColor: amber,
     borderWidth: 2,
   });
-  page.drawCircle({
+  currentPage.drawCircle({
     x: sealCX,
     y: sealCY,
     size: sealR2,
@@ -1243,34 +1264,34 @@ export async function generateStatementPdf(
     borderWidth: 0.8,
   });
 
-  drawCentred(page, "VERIFIED", {
+  drawCentred(currentPage, "VERIFIED", {
     cx: sealCX,
     y: sealCY + 20,
     size: 7.5,
     font: bold,
     color: amber,
   });
-  drawCentred(page, "· · · · ·", {
+  drawCentred(currentPage, "· · · · ·", {
     cx: sealCX,
     y: sealCY + 10,
     size: 6,
     font: regular,
     color: rgb(0.7, 0.78, 0.9),
   });
-  drawCentred(page, "FONLOK", {
+  drawCentred(currentPage, "FONLOK", {
     cx: sealCX,
     y: sealCY - 4,
     size: 13,
     font: bold,
     color: white,
   });
-  page.drawLine({
+  currentPage.drawLine({
     start: { x: sealCX - 22, y: sealCY - 10 },
     end: { x: sealCX + 22, y: sealCY - 10 },
     thickness: 0.6,
     color: amber,
   });
-  drawCentred(page, "SECURE ESCROW", {
+  drawCentred(currentPage, "SECURE ESCROW", {
     cx: sealCX,
     y: sealCY - 21,
     size: 6,
@@ -1279,33 +1300,9 @@ export async function generateStatementPdf(
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // ── FOOTER ─────────────────────────────────────────────────────────────────
+  // ── FOOTER (last page) ─────────────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
-  const footerY = 82;
-  page.drawRectangle({ x: 0, y: 0, width, height: footerY, color: navy });
-  page.drawRectangle({ x: 0, y: footerY, width, height: 1.5, color: amber });
-
-  drawCentred(page, copy.footerStatement, {
-    cx: width / 2,
-    y: 58,
-    size: 7,
-    font: regular,
-    color: rgb(0.7, 0.78, 0.9),
-  });
-  drawCentred(page, `${copy.footerStatement2}  |  ${BRAND.domain}`, {
-    cx: width / 2,
-    y: 44,
-    size: 6.5,
-    font: regular,
-    color: rgb(0.55, 0.63, 0.76),
-  });
-  drawCentred(page, `Generated: ${new Date().toUTCString()}`, {
-    cx: width / 2,
-    y: 28,
-    size: 6.5,
-    font: regular,
-    color: rgb(0.5, 0.58, 0.72),
-  });
+  drawPageFooter(currentPage);
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
