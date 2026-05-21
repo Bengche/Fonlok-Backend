@@ -439,4 +439,33 @@ app.listen(PORT, async () => {
       error: err.message,
     });
   }
+
+  // Add seller profile columns: bio and tags.
+  try {
+    await db.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS bio  VARCHAR(160) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS tags TEXT[]       DEFAULT '{}';
+    `);
+    logger.info("users.bio + users.tags columns ready");
+  } catch (err) {
+    logger.warn("users.bio/tags migration failed", { error: err.message });
+  }
+
+  // Add review enhancement columns: pin, seller reply, invoice name disclosure.
+  try {
+    await db.query(`
+      ALTER TABLE reviews
+        ADD COLUMN IF NOT EXISTS pinned             BOOLEAN     DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS seller_reply       TEXT        DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS reply_created_at   TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS show_invoice_name  BOOLEAN     DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS invoice_name       TEXT        DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_amount     NUMERIC     DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_currency   VARCHAR(10) DEFAULT NULL;
+    `);
+    logger.info("reviews enhancement columns ready");
+  } catch (err) {
+    logger.warn("reviews enhancement migration failed", { error: err.message });
+  }
 });
