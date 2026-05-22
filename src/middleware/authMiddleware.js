@@ -43,12 +43,22 @@ const authMiddleware = async (req, res, next) => {
     // These exemptions let suspended users view their status and submit an appeal.
     try {
       const suspRow = await db.query(
-        `SELECT is_suspended, suspended_until, suspension_reason, appeal_status
+        `SELECT is_suspended, suspended_until, suspension_reason, appeal_status, deleted_at
          FROM users WHERE id = $1`,
         [decoded.id],
       );
       if (suspRow.rows.length) {
         const s = suspRow.rows[0];
+
+        // Deleted account — block all requests unconditionally
+        if (s.deleted_at) {
+          clearAuthCookie(res);
+          return res.status(403).json({
+            code: "ACCOUNT_DELETED",
+            message: "This account has been permanently deleted and cannot be accessed.",
+          });
+        }
+
         const isActive =
           s.is_suspended &&
           (s.suspended_until === null ||
@@ -59,11 +69,14 @@ const authMiddleware = async (req, res, next) => {
           req.user.suspension_reason = s.suspension_reason;
           req.user.appeal_status = s.appeal_status;
           const exempted = ["/appeal", "/suspension-status"];
-          const isExempt = exempted.some((p) => req.path === p || req.path.startsWith(p + "?"));
+          const isExempt = exempted.some(
+            (p) => req.path === p || req.path.startsWith(p + "?"),
+          );
           if (!isExempt) {
             return res.status(403).json({
               code: "ACCOUNT_SUSPENDED",
-              message: "Your account has been suspended. You cannot perform this action.",
+              message:
+                "Your account has been suspended. You cannot perform this action.",
               suspension_reason: s.suspension_reason,
               suspended_until: s.suspended_until,
               appeal_status: s.appeal_status,

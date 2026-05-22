@@ -489,4 +489,14 @@ app.listen(PORT, async () => {
   } catch (err) {
     logger.warn("users suspension migration failed", { error: err.message });
   }
+
+  try {
+    await db.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+    `);
+    logger.info("users deleted_at column ready");
+  } catch (err) {
+    logger.warn("users deleted_at migration failed", { error: err.message });
+  }
 });

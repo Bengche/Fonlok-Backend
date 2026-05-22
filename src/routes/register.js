@@ -163,6 +163,18 @@ router.post(
         referrerId = referrerCheck.rows[0].id;
       }
 
+      // 1b. Block registration if email or phone was previously used on a deleted account
+      const deletedCheck = await db.query(
+        `SELECT id FROM users WHERE deleted_at IS NOT NULL AND (email = $1 OR phone = $2) LIMIT 1`,
+        [normalizedEmail, phone],
+      );
+      if (deletedCheck.rows.length > 0) {
+        return res.status(409).json({
+          message:
+            "This email address or phone number cannot be used to create a new account. Please contact support if you believe this is an error.",
+        });
+      }
+
       // 2. Create the user account
       const newUser = await db.query(
         "INSERT INTO users (name, email, phone, password, username, dob, country, profilePicture, referred_by) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",

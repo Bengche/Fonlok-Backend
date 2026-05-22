@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import db from "../controllers/db.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 import sgMail from "@sendgrid/mail";
-import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
+import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
 import { BRAND } from "../config/brand.js";
 import { getSettings, setSetting, bool } from "../utils/platformSettings.js";
 dotenv.config();
@@ -1262,13 +1262,17 @@ router.post("/kyc/:id/reject", adminMiddleware, async (req, res) => {
 router.get("/suspensions", adminMiddleware, async (req, res) => {
   try {
     const { filter = "all", page = 1, limit = 20 } = req.query;
-    const offset = (Math.max(1, parseInt(page)) - 1) * Math.min(50, parseInt(limit) || 20);
+    const offset =
+      (Math.max(1, parseInt(page)) - 1) * Math.min(50, parseInt(limit) || 20);
     const lim = Math.min(50, parseInt(limit) || 20);
 
     let whereClause = "WHERE u.is_suspended = TRUE";
-    if (filter === "appeal_pending") whereClause += " AND u.appeal_status = 'pending'";
-    else if (filter === "permanent") whereClause += " AND u.suspended_until IS NULL";
-    else if (filter === "temporary") whereClause += " AND u.suspended_until IS NOT NULL";
+    if (filter === "appeal_pending")
+      whereClause += " AND u.appeal_status = 'pending'";
+    else if (filter === "permanent")
+      whereClause += " AND u.suspended_until IS NULL";
+    else if (filter === "temporary")
+      whereClause += " AND u.suspended_until IS NOT NULL";
 
     const [rows, countRow] = await Promise.all([
       db.query(
@@ -1299,15 +1303,24 @@ router.get("/suspensions", adminMiddleware, async (req, res) => {
 router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
   const { id } = req.params;
   const { reason, type, duration_days } = req.body;
-  if (!reason?.trim()) return res.status(400).json({ message: "Suspension reason is required." });
-  if (!["permanent", "temporary"].includes(type)) return res.status(400).json({ message: "type must be 'permanent' or 'temporary'." });
+  if (!reason?.trim())
+    return res.status(400).json({ message: "Suspension reason is required." });
+  if (!["permanent", "temporary"].includes(type))
+    return res
+      .status(400)
+      .json({ message: "type must be 'permanent' or 'temporary'." });
   if (type === "temporary" && (!duration_days || parseInt(duration_days) < 1)) {
-    return res.status(400).json({ message: "duration_days must be at least 1 for a temporary suspension." });
+    return res
+      .status(400)
+      .json({
+        message: "duration_days must be at least 1 for a temporary suspension.",
+      });
   }
 
-  const suspended_until = type === "temporary"
-    ? new Date(Date.now() + parseInt(duration_days) * 86400000)
-    : null;
+  const suspended_until =
+    type === "temporary"
+      ? new Date(Date.now() + parseInt(duration_days) * 86400000)
+      : null;
 
   try {
     const uRes = await db.query(
@@ -1319,21 +1332,32 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
        RETURNING id, name, email, username`,
       [reason.trim(), suspended_until, id],
     );
-    if (!uRes.rows.length) return res.status(404).json({ message: "User not found." });
+    if (!uRes.rows.length)
+      return res.status(404).json({ message: "User not found." });
 
     const { name, email, username } = uRes.rows[0];
     const untilLabel = suspended_until
-      ? suspended_until.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })
+      ? suspended_until.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
       : "Permanently";
 
     // Push notification
     try {
-      const { notifyUser } = await import("../middleware/notificationHelper.js");
-      await notifyUser(id, "account_suspended", "Account Suspended",
+      const { notifyUser } =
+        await import("../middleware/notificationHelper.js");
+      await notifyUser(
+        id,
+        "account_suspended",
+        "Account Suspended",
         `Your account has been suspended. Reason: ${reason.trim()}`,
         {},
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // Email to user
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
@@ -1344,9 +1368,21 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
         </p>
         ${emailTable([
           ["Account", username ? `@${username}` : email],
-          ["Suspension Type", type === "permanent" ? "Permanent" : `Temporary — until ${untilLabel}`],
+          [
+            "Suspension Type",
+            type === "permanent"
+              ? "Permanent"
+              : `Temporary — until ${untilLabel}`,
+          ],
           ["Reason", reason.trim()],
-          ["Date", new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })],
+          [
+            "Date",
+            new Date().toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            }),
+          ],
         ])}
         <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:14px 16px;border-radius:6px;margin:18px 0;">
           <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.6;">
@@ -1363,10 +1399,14 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
           subject: `${BRAND.name} — Your Account Has Been Suspended`,
           html: emailWrap(body, { subtitle: "Account Notice" }),
         });
-      } catch (e) { console.warn("Suspension email failed:", e.message); }
+      } catch (e) {
+        console.warn("Suspension email failed:", e.message);
+      }
     }
 
-    return res.json({ message: `Account suspended successfully. User has been notified.` });
+    return res.json({
+      message: `Account suspended successfully. User has been notified.`,
+    });
   } catch (err) {
     console.error("Admin suspend error:", err);
     return res.status(500).json({ message: "Failed to suspend account." });
@@ -1388,18 +1428,25 @@ router.post("/users/:id/unsuspend", adminMiddleware, async (req, res) => {
        RETURNING id, name, email, username`,
       [id],
     );
-    if (!uRes.rows.length) return res.status(404).json({ message: "User not found." });
+    if (!uRes.rows.length)
+      return res.status(404).json({ message: "User not found." });
 
     const { name, email, username } = uRes.rows[0];
 
     // Push notification
     try {
-      const { notifyUser } = await import("../middleware/notificationHelper.js");
-      await notifyUser(id, "account_reactivated", "Account Reactivated",
+      const { notifyUser } =
+        await import("../middleware/notificationHelper.js");
+      await notifyUser(
+        id,
+        "account_reactivated",
+        "Account Reactivated",
         "Good news — your account has been reactivated. You can now access all features.",
         {},
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // Email to user
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
@@ -1411,8 +1458,19 @@ router.post("/users/:id/unsuspend", adminMiddleware, async (req, res) => {
         ${note ? `<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:14px 16px;border-radius:6px;margin-bottom:18px;"><p style="margin:0;color:#166534;font-size:14px;">Note from our team: ${escapeHtml(note)}</p></div>` : ""}
         ${emailTable([
           ["Account", username ? `@${username}` : email],
-          ["Status", '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Active</span>', ""],
-          ["Date", new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })],
+          [
+            "Status",
+            '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Active</span>',
+            "",
+          ],
+          [
+            "Date",
+            new Date().toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            }),
+          ],
         ])}
         ${emailButton(`${process.env.FRONTEND_URL || BRAND.siteUrl}/dashboard`, "Go to Dashboard")}
       `;
@@ -1423,10 +1481,14 @@ router.post("/users/:id/unsuspend", adminMiddleware, async (req, res) => {
           subject: `${BRAND.name} — Your Account Has Been Reactivated`,
           html: emailWrap(body, { subtitle: "Account Notice" }),
         });
-      } catch (e) { console.warn("Reactivation email failed:", e.message); }
+      } catch (e) {
+        console.warn("Reactivation email failed:", e.message);
+      }
     }
 
-    return res.json({ message: "Account reactivated. User has been notified." });
+    return res.json({
+      message: "Account reactivated. User has been notified.",
+    });
   } catch (err) {
     console.error("Admin unsuspend error:", err);
     return res.status(500).json({ message: "Failed to reactivate account." });
@@ -1447,18 +1509,25 @@ router.post("/users/:id/appeal/accept", adminMiddleware, async (req, res) => {
        RETURNING id, name, email, username`,
       [note?.trim() || null, id],
     );
-    if (!uRes.rows.length) return res.status(404).json({ message: "User not found." });
+    if (!uRes.rows.length)
+      return res.status(404).json({ message: "User not found." });
 
     const { name, email, username } = uRes.rows[0];
 
     // Push notification
     try {
-      const { notifyUser } = await import("../middleware/notificationHelper.js");
-      await notifyUser(id, "appeal_accepted", "Appeal Accepted",
+      const { notifyUser } =
+        await import("../middleware/notificationHelper.js");
+      await notifyUser(
+        id,
+        "appeal_accepted",
+        "Appeal Accepted",
         "Your appeal has been reviewed and accepted. Your account is now fully reactivated.",
         {},
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // Email to user
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
@@ -1471,8 +1540,16 @@ router.post("/users/:id/appeal/accept", adminMiddleware, async (req, res) => {
         ${note?.trim() ? `<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:14px 16px;border-radius:6px;margin-bottom:18px;"><p style="margin:0;color:#166534;font-size:14px;">Message from our team: ${escapeHtml(note.trim())}</p></div>` : ""}
         ${emailTable([
           ["Account", username ? `@${username}` : email],
-          ["Appeal Decision", '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Accepted</span>', ""],
-          ["Account Status", '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Active</span>', ""],
+          [
+            "Appeal Decision",
+            '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Accepted</span>',
+            "",
+          ],
+          [
+            "Account Status",
+            '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Active</span>',
+            "",
+          ],
         ])}
         ${emailButton(`${process.env.FRONTEND_URL || BRAND.siteUrl}/dashboard`, "Go to Dashboard")}
       `;
@@ -1483,10 +1560,14 @@ router.post("/users/:id/appeal/accept", adminMiddleware, async (req, res) => {
           subject: `${BRAND.name} — Your Appeal Has Been Accepted`,
           html: emailWrap(body, { subtitle: "Account Notice" }),
         });
-      } catch (e) { console.warn("Appeal accept email failed:", e.message); }
+      } catch (e) {
+        console.warn("Appeal accept email failed:", e.message);
+      }
     }
 
-    return res.json({ message: "Appeal accepted. Account reactivated and user notified." });
+    return res.json({
+      message: "Appeal accepted. Account reactivated and user notified.",
+    });
   } catch (err) {
     console.error("Admin appeal accept error:", err);
     return res.status(500).json({ message: "Failed to accept appeal." });
@@ -1506,21 +1587,33 @@ router.post("/users/:id/appeal/decline", adminMiddleware, async (req, res) => {
        RETURNING id, name, email, username, suspended_until, suspension_reason`,
       [note?.trim() || null, id],
     );
-    if (!uRes.rows.length) return res.status(404).json({ message: "User not found." });
+    if (!uRes.rows.length)
+      return res.status(404).json({ message: "User not found." });
 
-    const { name, email, username, suspended_until, suspension_reason } = uRes.rows[0];
+    const { name, email, username, suspended_until, suspension_reason } =
+      uRes.rows[0];
     const untilLabel = suspended_until
-      ? new Date(suspended_until).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })
+      ? new Date(suspended_until).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
       : "Permanently";
 
     // Push notification
     try {
-      const { notifyUser } = await import("../middleware/notificationHelper.js");
-      await notifyUser(id, "appeal_declined", "Appeal Declined",
+      const { notifyUser } =
+        await import("../middleware/notificationHelper.js");
+      await notifyUser(
+        id,
+        "appeal_declined",
+        "Appeal Declined",
         "Your appeal has been reviewed. Unfortunately, we were unable to reinstate your account at this time.",
         {},
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // Email to user
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
@@ -1535,7 +1628,11 @@ router.post("/users/:id/appeal/decline", adminMiddleware, async (req, res) => {
           ["Account", username ? `@${username}` : email],
           ["Suspension Reason", suspension_reason || "Policy violation"],
           ["Suspension Until", suspended_until ? untilLabel : "Permanent"],
-          ["Appeal Decision", '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Declined</span>', ""],
+          [
+            "Appeal Decision",
+            '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Declined</span>',
+            "",
+          ],
         ])}
         <p style="color:#64748b;font-size:13px;margin:16px 0 0;line-height:1.6;">
           For further assistance, contact us at
@@ -1549,13 +1646,122 @@ router.post("/users/:id/appeal/decline", adminMiddleware, async (req, res) => {
           subject: `${BRAND.name} — Your Appeal Has Been Reviewed`,
           html: emailWrap(body, { subtitle: "Account Notice" }),
         });
-      } catch (e) { console.warn("Appeal decline email failed:", e.message); }
+      } catch (e) {
+        console.warn("Appeal decline email failed:", e.message);
+      }
     }
 
     return res.json({ message: "Appeal declined. User has been notified." });
   } catch (err) {
     console.error("Admin appeal decline error:", err);
     return res.status(500).json({ message: "Failed to decline appeal." });
+  }
+});
+
+// ─── ACCOUNT DELETION ────────────────────────────────────────────────────────
+
+// DELETE /admin/users/:id — soft-delete a user account.
+// Sets deleted_at = NOW(), revokes all sessions, sends an email notification.
+// Deleted users cannot log in and their email/phone block future registrations.
+router.delete("/users/:id", adminMiddleware, async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (!userId || isNaN(userId)) {
+    return res.status(400).json({ message: "Invalid user ID." });
+  }
+
+  try {
+    // Prevent admin from deleting their own account
+    if (req.user?.id === userId) {
+      return res
+        .status(400)
+        .json({ message: "You cannot delete your own admin account." });
+    }
+
+    const result = await db.query(
+      `UPDATE users
+       SET deleted_at = NOW(),
+           is_suspended = FALSE,
+           suspended_until = NULL,
+           suspension_reason = NULL,
+           suspended_at = NULL,
+           appeal_text = NULL,
+           appeal_status = 'none',
+           appeal_at = NULL,
+           appeal_admin_note = NULL
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, name, email, username`,
+      [userId],
+    );
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "User not found or already deleted." });
+    }
+
+    const { name, email, username } = result.rows[0];
+
+    // Revoke all active sessions for this user
+    try {
+      await db.query(
+        "DELETE FROM user_sessions WHERE user_id = $1",
+        [userId],
+      );
+    } catch { /* non-fatal */ }
+
+    // Push notification (best-effort, may fail if FCM token gone)
+    try {
+      const { notifyUser } = await import("../middleware/notificationHelper.js");
+      await notifyUser(
+        userId,
+        "account_deleted",
+        "Account Deleted",
+        "Your Fonlok account has been permanently deleted by our team.",
+        {},
+      );
+    } catch { /* non-fatal */ }
+
+    // Email notification
+    if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+      try {
+        await sgMail.send({
+          to: email,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+          subject: "Your Fonlok account has been deleted",
+          html: emailWrap(
+            `
+            <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">Account Permanently Deleted</h2>
+            <p style="color:#475569;margin:0 0 18px;line-height:1.6;">
+              Hi ${escapeHtml(name || username || "there")}, we are writing to inform you that your Fonlok account has been permanently deleted by our moderation team.
+            </p>
+            ${emailTable([
+              ["Account", `@${escapeHtml(username || "")} / ${escapeHtml(email)}`],
+              ["Date", new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })],
+              ["Status", "Permanently Deleted"],
+            ])}
+            <p style="color:#64748b;font-size:0.9rem;line-height:1.6;margin:16px 0 0;">
+              All your data, invoices, and transaction history have been removed. The email address and phone number associated with this account may not be used to create a new Fonlok account.
+            </p>
+            <p style="color:#64748b;font-size:0.9rem;line-height:1.6;margin:8px 0 0;">
+              If you believe this was done in error, please contact us at
+              <a href="mailto:${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}" style="color:#0F1F3D;">${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}</a>.
+            </p>
+            `,
+            { subtitle: "Account Update" },
+          ),
+        });
+      } catch (e) {
+        console.warn("Account deletion email failed:", e.message);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      message: `Account for @${username || email} has been permanently deleted.`,
+    });
+  } catch (err) {
+    console.error("Admin delete user error:", err);
+    return res.status(500).json({ message: "Failed to delete account." });
   }
 });
 
