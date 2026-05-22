@@ -65,10 +65,10 @@ router.get("/:username", async (req, res) => {
       `SELECT r.id, r.rating, r.comment, r.created_at,
               r.pinned, r.seller_reply, r.reply_created_at,
               r.show_invoice_name, r.invoice_name, r.invoice_amount, r.invoice_currency,
-              COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS reviewer_name,
+              COALESCE(NULLIF(TRIM(u.name), ''), u.username, r.reviewer_name, 'Anonymous') AS reviewer_name,
               r.reviewer_userid
        FROM reviews r
-       JOIN users u ON u.id = r.reviewer_userid
+       LEFT JOIN users u ON u.id = r.reviewer_userid
        WHERE r.seller_userid = $1
        ORDER BY r.pinned DESC, r.created_at DESC`,
       [seller.id],
