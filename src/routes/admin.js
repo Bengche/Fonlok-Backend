@@ -71,36 +71,40 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-  // Check if 2FA is enabled
-  const settings = await getSettings();
-  if (bool(settings, "admin_totp_enabled")) {
-    // Issue a short-lived pending token — no cookie yet
-    const tempToken = jwt.sign(
-      { isAdminPending: true, email: adminEmail },
+    // Check if 2FA is enabled
+    const settings = await getSettings();
+    if (bool(settings, "admin_totp_enabled")) {
+      // Issue a short-lived pending token — no cookie yet
+      const tempToken = jwt.sign(
+        { isAdminPending: true, email: adminEmail },
+        process.env.JWT_SECRET,
+        { expiresIn: "5m" },
+      );
+      return res.json({ require2fa: true, tempToken });
+    }
+
+    const token = jwt.sign(
+      { isAdmin: true, email: adminEmail },
       process.env.JWT_SECRET,
-      { expiresIn: "5m" },
+      { expiresIn: "8h" },
     );
-    return res.json({ require2fa: true, tempToken });
-  }
 
-  const token = jwt.sign(
-    { isAdmin: true, email: adminEmail },
-    process.env.JWT_SECRET,
-    { expiresIn: "8h" },
-  );
+    res.cookie("adminToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 8 * 60 * 60 * 1000, // 8 hours
+    });
 
-  res.cookie("adminToken", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 8 * 60 * 60 * 1000, // 8 hours
-  });
-
-  console.log(`✅ Admin logged in: ${adminEmail}`);
-  res.json({ message: "Logged in successfully." });
+    console.log(`✅ Admin logged in: ${adminEmail}`);
+    res.json({ message: "Logged in successfully." });
   } catch (err) {
     console.error("Admin login error:", err.message);
-    return res.status(500).json({ message: "Login failed due to a server error. Please try again." });
+    return res
+      .status(500)
+      .json({
+        message: "Login failed due to a server error. Please try again.",
+      });
   }
 });
 
@@ -1976,24 +1980,41 @@ router.patch("/feature-requests/:id", adminMiddleware, async (req, res) => {
 router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
-    const [userRow, invoices, transactions, auditRows] = await Promise.all([
+    const [userRow, invoices, payouts, payments, auditRows] = await Promise.all([
       db.query(
         `SELECT id, name, username, email, phone, wallet_balance, kyc_status,
-                is_suspended, deleted_at, created_at, referral_code,
-                referred_by, locale
+                is_suspended, deleted_at, created_at, referral_code, referred_by
          FROM users WHERE id=$1 LIMIT 1`,
         [id],
       ),
+      // Invoices where this user is the seller (creator)
       db.query(
-        `SELECT id, title, amount, status, created_at
-         FROM invoices WHERE seller_id=$1 OR buyer_id=$1
-         ORDER BY created_at DESC LIMIT 10`,
+        `SELECT id, invoicename AS title, amount, status, createdat AS created_at
+         FROM invoices WHERE userid=$1
+         ORDER BY createdat DESC LIMIT 10`,
         [id],
       ),
+      // Payouts received as a seller
       db.query(
-        `SELECT id, amount, status, type, created_at
-         FROM transactions WHERE user_id=$1
-         ORDER BY created_at DESC LIMIT 10`,
+        `SELECT p.id, p.amount, p.status, p.createdat AS created_at,
+                COALESCE(i.invoicename, 'Payout') AS label,
+                'payout' AS type
+         FROM payouts p
+         LEFT JOIN invoices i ON i.invoicenumber = p.invoice_number
+         WHERE p.userid=$1
+         ORDER BY p.createdat DESC LIMIT 10`,
+        [id],
+      ),
+      // Payments made as a buyer (via guests table linking)
+      db.query(
+        `SELECT pm.id, pm.amount, pm.status, pm.createdat AS created_at,
+                COALESCE(i.invoicename, 'Payment') AS label,
+                'payment' AS type
+         FROM payments pm
+         JOIN invoices i ON i.id = pm.invoiceid
+         JOIN guests g ON g.invoicenumber = i.invoicenumber
+         WHERE g.registered_userid=$1
+         ORDER BY pm.createdat DESC LIMIT 10`,
         [id],
       ),
       db.query(
@@ -2008,7 +2029,9 @@ router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
     res.json({
       user: userRow.rows[0],
       invoices: invoices.rows,
-      transactions: transactions.rows,
+      transactions: [...payouts.rows, ...payments.rows].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ).slice(0, 20),
       auditHistory: auditRows.rows,
     });
   } catch (err) {

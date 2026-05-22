@@ -413,7 +413,9 @@ router.post("/submit", authMiddleware, (req, res) => {
     if (!adminEmail) {
       logger.warn("KYC admin email skipped: ADMIN_EMAIL env var is not set");
     } else if (!process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
-      logger.warn("KYC admin email skipped: SENDGRID_API_KEY is not configured");
+      logger.warn(
+        "KYC admin email skipped: SENDGRID_API_KEY is not configured",
+      );
     } else {
       try {
         const docTypeLabel =
@@ -445,7 +447,10 @@ router.post("/submit", authMiddleware, (req, res) => {
           html: emailWrap(adminBody, { subtitle: "Admin — Compliance Review" }),
         });
       } catch (emailErr) {
-        logger.error("KYC admin email failed", { error: emailErr.message, adminEmail });
+        logger.error("KYC admin email failed", {
+          error: emailErr.message,
+          adminEmail,
+        });
       }
     }
 
