@@ -27,7 +27,9 @@ async function auditLog(action, targetId, detail = "") {
        VALUES ($1, 'user', $2, $3)`,
       [action, targetId ?? null, detail || null],
     );
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 const escapeHtml = (value) =>
@@ -214,7 +216,9 @@ router.post("/feature-request", async (req, res) => {
           pathname || null,
         ],
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     return res.json({
       message: "Your feature request has been sent to the Fonlok team.",
@@ -1013,7 +1017,11 @@ router.post("/adjust-balance", adminMiddleware, async (req, res) => {
       [userId],
     );
 
-    await auditLog("balance_adjusted", userId, `${type} ${amt} XAF — ${reason.trim()}`);
+    await auditLog(
+      "balance_adjusted",
+      userId,
+      `${type} ${amt} XAF — ${reason.trim()}`,
+    );
     res.json({
       message: `${type === "credit" ? "Credited" : "Debited"} ${amt} XAF ${type === "credit" ? "to" : "from"} ${user.name}'s wallet.`,
       newBalance: parseFloat(newBalRes.rows[0].wallet_balance),
@@ -1214,7 +1222,11 @@ router.post("/kyc/:id/approve", adminMiddleware, async (req, res) => {
       }
     }
 
-    await auditLog("kyc_approved", user_id, `KYC approved${note ? ` — ${note}` : ""}`);
+    await auditLog(
+      "kyc_approved",
+      user_id,
+      `KYC approved${note ? ` — ${note}` : ""}`,
+    );
     return res.json({ message: "Application approved and user notified." });
   } catch (err) {
     console.error("Admin KYC approve error:", err);
@@ -1299,7 +1311,11 @@ router.post("/kyc/:id/reject", adminMiddleware, async (req, res) => {
       }
     }
 
-    await auditLog("kyc_rejected", user_id, `KYC rejected${note ? ` — ${note}` : ""}`);
+    await auditLog(
+      "kyc_rejected",
+      user_id,
+      `KYC rejected${note ? ` — ${note}` : ""}`,
+    );
     return res.json({ message: "Application rejected and user notified." });
   } catch (err) {
     console.error("Admin KYC reject error:", err);
@@ -1455,7 +1471,11 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
       }
     }
 
-    await auditLog("user_suspended", id, `${type === "permanent" ? "Permanent" : `${duration_days}d`} — ${reason.trim()}`);
+    await auditLog(
+      "user_suspended",
+      id,
+      `${type === "permanent" ? "Permanent" : `${duration_days}d`} — ${reason.trim()}`,
+    );
     return res.json({
       message: `Account suspended successfully. User has been notified.`,
     });
@@ -1903,8 +1923,10 @@ router.get("/feature-requests", adminMiddleware, async (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const offset = (page - 1) * limit;
     const status = req.query.status;
-    const where = status && ["new", "read", "archived"].includes(status)
-      ? `WHERE status = '${status}'` : "";
+    const where =
+      status && ["new", "read", "archived"].includes(status)
+        ? `WHERE status = '${status}'`
+        : "";
     const [rows, countRow] = await Promise.all([
       db.query(
         `SELECT id, name, email, title, details, user_id, username, locale, pathname, status, created_at
@@ -2015,14 +2037,17 @@ router.post("/2fa/verify", adminMiddleware, async (req, res) => {
     const settings = await getSettings(["admin_totp_pending"]);
     const pending = settings.admin_totp_pending;
     if (!pending)
-      return res.status(400).json({ message: "No pending 2FA setup found. Run setup first." });
+      return res
+        .status(400)
+        .json({ message: "No pending 2FA setup found. Run setup first." });
     const valid = speakeasy.totp.verify({
       secret: pending,
       encoding: "base32",
       token: String(token).replace(/\s/g, ""),
       window: 1,
     });
-    if (!valid) return res.status(400).json({ message: "Invalid OTP. Try again." });
+    if (!valid)
+      return res.status(400).json({ message: "Invalid OTP. Try again." });
     await setSetting("admin_totp_secret", pending);
     await setSetting("admin_totp_enabled", "true");
     await setSetting("admin_totp_pending", "");
@@ -2057,11 +2082,16 @@ router.post("/2fa/login-verify", async (req, res) => {
     try {
       payload = jwt.verify(tempToken, process.env.JWT_SECRET);
     } catch {
-      return res.status(401).json({ message: "Session expired. Please log in again." });
+      return res
+        .status(401)
+        .json({ message: "Session expired. Please log in again." });
     }
     if (!payload?.isAdminPending)
       return res.status(401).json({ message: "Invalid session." });
-    const settings = await getSettings(["admin_totp_secret", "admin_totp_enabled"]);
+    const settings = await getSettings([
+      "admin_totp_secret",
+      "admin_totp_enabled",
+    ]);
     if (!bool(settings.admin_totp_enabled))
       return res.status(400).json({ message: "2FA is not enabled." });
     const valid = speakeasy.totp.verify({
