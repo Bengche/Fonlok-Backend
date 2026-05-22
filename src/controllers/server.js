@@ -499,4 +499,48 @@ app.listen(PORT, async () => {
   } catch (err) {
     logger.warn("users deleted_at migration failed", { error: err.message });
   }
+
+  // Admin audit log
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id          BIGSERIAL PRIMARY KEY,
+        action      VARCHAR(80)  NOT NULL,
+        target_type VARCHAR(40)  NOT NULL DEFAULT 'user',
+        target_id   BIGINT,
+        detail      TEXT,
+        created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log (created_at DESC);
+    `);
+    logger.info("admin_audit_log table ready");
+  } catch (err) {
+    logger.warn("admin_audit_log migration failed", { error: err.message });
+  }
+
+  // Feature requests inbox
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS feature_requests (
+        id         BIGSERIAL PRIMARY KEY,
+        name       TEXT,
+        email      TEXT,
+        title      TEXT         NOT NULL,
+        details    TEXT         NOT NULL,
+        user_id    INTEGER      REFERENCES users(id) ON DELETE SET NULL,
+        username   TEXT,
+        locale     TEXT,
+        pathname   TEXT,
+        status     VARCHAR(20)  NOT NULL DEFAULT 'new',
+        created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_feature_requests_created ON feature_requests (created_at DESC);
+    `);
+    logger.info("feature_requests table ready");
+  } catch (err) {
+    logger.warn("feature_requests migration failed", { error: err.message });
+  }
+
+  // Admin 2FA secret in platform_settings (key: admin_totp_secret)
+  // No migration needed — uses existing platform_settings kv table
 });

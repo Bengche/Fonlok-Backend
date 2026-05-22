@@ -55,7 +55,8 @@ const authMiddleware = async (req, res, next) => {
           clearAuthCookie(res);
           return res.status(403).json({
             code: "ACCOUNT_DELETED",
-            message: "This account has been permanently deleted and cannot be accessed.",
+            message:
+              "This account has been permanently deleted and cannot be accessed.",
           });
         }
 

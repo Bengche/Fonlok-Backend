@@ -5,11 +5,30 @@ import dotenv from "dotenv";
 import db from "../controllers/db.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 import sgMail from "@sendgrid/mail";
-import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
+import {
+  emailWrap,
+  emailTable,
+  emailButton,
+  emailButtonDanger,
+} from "../utils/emailTemplate.js";
 import { BRAND } from "../config/brand.js";
 import { getSettings, setSetting, bool } from "../utils/platformSettings.js";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
+const speakeasy = _require("speakeasy");
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+// ─── Audit log helper ─────────────────────────────────────────────────────────
+async function auditLog(action, targetId, detail = "") {
+  try {
+    await db.query(
+      `INSERT INTO admin_audit_log (action, target_type, target_id, detail)
+       VALUES ($1, 'user', $2, $3)`,
+      [action, targetId ?? null, detail || null],
+    );
+  } catch { /* non-fatal */ }
+}
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -47,6 +66,18 @@ router.post("/login", async (req, res) => {
 
   if (email.toLowerCase().trim() !== adminEmail || password !== adminPassword) {
     return res.status(401).json({ message: "Invalid admin credentials." });
+  }
+
+  // Check if 2FA is enabled
+  const settings = await getSettings(["admin_totp_enabled"]);
+  if (bool(settings.admin_totp_enabled)) {
+    // Issue a short-lived pending token — no cookie yet
+    const tempToken = jwt.sign(
+      { isAdminPending: true, email: adminEmail },
+      process.env.JWT_SECRET,
+      { expiresIn: "5m" },
+    );
+    return res.json({ require2fa: true, tempToken });
   }
 
   const token = jwt.sign(
@@ -166,6 +197,24 @@ router.post("/feature-request", async (req, res) => {
         { subtitle: "Feature Request" },
       ),
     });
+
+    // Store to DB for inbox (non-fatal — email already sent)
+    try {
+      await db.query(
+        `INSERT INTO feature_requests (name, email, title, details, user_id, username, locale, pathname)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          accountLabel,
+          accountEmail,
+          requestTitle,
+          requestDetails,
+          userId || null,
+          String(req.body.username || "").trim() || null,
+          locale || null,
+          pathname || null,
+        ],
+      );
+    } catch { /* non-fatal */ }
 
     return res.json({
       message: "Your feature request has been sent to the Fonlok team.",
@@ -846,6 +895,7 @@ router.get("/settings", adminMiddleware, async (req, res) => {
       maintenanceMode: bool(s, "maintenance_mode"),
       paymentsBlocked: bool(s, "payments_blocked"),
       payoutsBlocked: bool(s, "payouts_blocked"),
+      twoFaEnabled: bool(s, "admin_totp_enabled"),
     });
   } catch (err) {
     console.error("Admin get-settings error:", err);
@@ -963,6 +1013,7 @@ router.post("/adjust-balance", adminMiddleware, async (req, res) => {
       [userId],
     );
 
+    await auditLog("balance_adjusted", userId, `${type} ${amt} XAF — ${reason.trim()}`);
     res.json({
       message: `${type === "credit" ? "Credited" : "Debited"} ${amt} XAF ${type === "credit" ? "to" : "from"} ${user.name}'s wallet.`,
       newBalance: parseFloat(newBalRes.rows[0].wallet_balance),
@@ -1163,6 +1214,7 @@ router.post("/kyc/:id/approve", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("kyc_approved", user_id, `KYC approved${note ? ` — ${note}` : ""}`);
     return res.json({ message: "Application approved and user notified." });
   } catch (err) {
     console.error("Admin KYC approve error:", err);
@@ -1247,6 +1299,7 @@ router.post("/kyc/:id/reject", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("kyc_rejected", user_id, `KYC rejected${note ? ` — ${note}` : ""}`);
     return res.json({ message: "Application rejected and user notified." });
   } catch (err) {
     console.error("Admin KYC reject error:", err);
@@ -1310,11 +1363,9 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
       .status(400)
       .json({ message: "type must be 'permanent' or 'temporary'." });
   if (type === "temporary" && (!duration_days || parseInt(duration_days) < 1)) {
-    return res
-      .status(400)
-      .json({
-        message: "duration_days must be at least 1 for a temporary suspension.",
-      });
+    return res.status(400).json({
+      message: "duration_days must be at least 1 for a temporary suspension.",
+    });
   }
 
   const suspended_until =
@@ -1404,6 +1455,7 @@ router.post("/users/:id/suspend", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("user_suspended", id, `${type === "permanent" ? "Permanent" : `${duration_days}d`} — ${reason.trim()}`);
     return res.json({
       message: `Account suspended successfully. User has been notified.`,
     });
@@ -1486,6 +1538,7 @@ router.post("/users/:id/unsuspend", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("user_unsuspended", id, note?.trim() || null);
     return res.json({
       message: "Account reactivated. User has been notified.",
     });
@@ -1565,6 +1618,7 @@ router.post("/users/:id/appeal/accept", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("appeal_accepted", id, note?.trim() || null);
     return res.json({
       message: "Appeal accepted. Account reactivated and user notified.",
     });
@@ -1651,6 +1705,7 @@ router.post("/users/:id/appeal/decline", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("appeal_declined", id, note?.trim() || null);
     return res.json({ message: "Appeal declined. User has been notified." });
   } catch (err) {
     console.error("Admin appeal decline error:", err);
@@ -1703,15 +1758,15 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
 
     // Revoke all active sessions for this user
     try {
-      await db.query(
-        "DELETE FROM user_sessions WHERE user_id = $1",
-        [userId],
-      );
-    } catch { /* non-fatal */ }
+      await db.query("DELETE FROM user_sessions WHERE user_id = $1", [userId]);
+    } catch {
+      /* non-fatal */
+    }
 
     // Push notification (best-effort, may fail if FCM token gone)
     try {
-      const { notifyUser } = await import("../middleware/notificationHelper.js");
+      const { notifyUser } =
+        await import("../middleware/notificationHelper.js");
       await notifyUser(
         userId,
         "account_deleted",
@@ -1719,7 +1774,9 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
         "Your Fonlok account has been permanently deleted by our team.",
         {},
       );
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
 
     // Email notification
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
@@ -1735,8 +1792,18 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
               Hi ${escapeHtml(name || username || "there")}, we are writing to inform you that your Fonlok account has been permanently deleted by our moderation team.
             </p>
             ${emailTable([
-              ["Account", `@${escapeHtml(username || "")} / ${escapeHtml(email)}`],
-              ["Date", new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })],
+              [
+                "Account",
+                `@${escapeHtml(username || "")} / ${escapeHtml(email)}`,
+              ],
+              [
+                "Date",
+                new Date().toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                }),
+              ],
               ["Status", "Permanently Deleted"],
             ])}
             <p style="color:#64748b;font-size:0.9rem;line-height:1.6;margin:16px 0 0;">
@@ -1755,6 +1822,7 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
       }
     }
 
+    await auditLog("user_deleted", id, email || username || null);
     return res.json({
       ok: true,
       message: `Account for @${username || email} has been permanently deleted.`,
@@ -1762,6 +1830,263 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Admin delete user error:", err);
     return res.status(500).json({ message: "Failed to delete account." });
+  }
+});
+
+// ─── GET /admin/audit-log (─ paginated) ─────────────────────────────────────────────────────────────
+router.get("/audit-log", adminMiddleware, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 30);
+    const offset = (page - 1) * limit;
+    const [rows, countRow] = await Promise.all([
+      db.query(
+        `SELECT id, action, target_type, target_id, detail, created_at
+         FROM admin_audit_log ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+      db.query(`SELECT COUNT(*) FROM admin_audit_log`),
+    ]);
+    const total = parseInt(countRow.rows[0].count);
+    res.json({
+      data: rows.rows,
+      hasMore: offset + rows.rows.length < total,
+      total,
+      page,
+    });
+  } catch (err) {
+    console.error("Admin audit-log error:", err);
+    res.status(500).json({ message: "Failed to load audit log." });
+  }
+});
+
+// ─── GET /admin/analytics ───────────────────────────────────────────────────────────────
+// Returns last 30 days of daily: revenue (completed transactions), new users,
+// payment count
+router.get("/analytics", adminMiddleware, async (req, res) => {
+  try {
+    const [revenue, users, payments] = await Promise.all([
+      db.query(`
+        SELECT DATE(created_at) AS day, COALESCE(SUM(amount),0)::float AS total
+        FROM transactions
+        WHERE status = 'completed' AND created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY day ORDER BY day ASC
+      `),
+      db.query(`
+        SELECT DATE(created_at) AS day, COUNT(*)::int AS count
+        FROM users
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY day ORDER BY day ASC
+      `),
+      db.query(`
+        SELECT DATE(created_at) AS day, COUNT(*)::int AS count
+        FROM transactions
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY day ORDER BY day ASC
+      `),
+    ]);
+    res.json({
+      revenue: revenue.rows,
+      users: users.rows,
+      payments: payments.rows,
+    });
+  } catch (err) {
+    console.error("Admin analytics error:", err);
+    res.status(500).json({ message: "Failed to load analytics." });
+  }
+});
+
+// ─── GET /admin/feature-requests ──────────────────────────────────────────────────────────
+router.get("/feature-requests", adminMiddleware, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 20);
+    const offset = (page - 1) * limit;
+    const status = req.query.status;
+    const where = status && ["new", "read", "archived"].includes(status)
+      ? `WHERE status = '${status}'` : "";
+    const [rows, countRow] = await Promise.all([
+      db.query(
+        `SELECT id, name, email, title, details, user_id, username, locale, pathname, status, created_at
+         FROM feature_requests ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+      db.query(`SELECT COUNT(*) FROM feature_requests ${where}`),
+    ]);
+    const total = parseInt(countRow.rows[0].count);
+    res.json({
+      data: rows.rows,
+      hasMore: offset + rows.rows.length < total,
+      total,
+      page,
+    });
+  } catch (err) {
+    console.error("Admin feature-requests error:", err);
+    res.status(500).json({ message: "Failed to load feature requests." });
+  }
+});
+
+// ─── PATCH /admin/feature-requests/:id (update status) ────────────────────────
+router.patch("/feature-requests/:id", adminMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!["new", "read", "archived"].includes(status))
+    return res.status(400).json({ message: "Invalid status value." });
+  try {
+    const r = await db.query(
+      `UPDATE feature_requests SET status=$1 WHERE id=$2 RETURNING id`,
+      [status, id],
+    );
+    if (!r.rows.length) return res.status(404).json({ message: "Not found." });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Admin feature-request patch error:", err);
+    res.status(500).json({ message: "Failed to update status." });
+  }
+});
+
+// ─── GET /admin/users/:id/profile (user drilldown) ────────────────────────────
+router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [userRow, invoices, transactions, auditRows] = await Promise.all([
+      db.query(
+        `SELECT id, name, username, email, phone, wallet_balance, kyc_status,
+                is_suspended, deleted_at, created_at, referral_code,
+                referred_by, locale
+         FROM users WHERE id=$1 LIMIT 1`,
+        [id],
+      ),
+      db.query(
+        `SELECT id, title, amount, status, created_at
+         FROM invoices WHERE seller_id=$1 OR buyer_id=$1
+         ORDER BY created_at DESC LIMIT 10`,
+        [id],
+      ),
+      db.query(
+        `SELECT id, amount, status, type, created_at
+         FROM transactions WHERE user_id=$1
+         ORDER BY created_at DESC LIMIT 10`,
+        [id],
+      ),
+      db.query(
+        `SELECT action, detail, created_at
+         FROM admin_audit_log WHERE target_id=$1
+         ORDER BY created_at DESC LIMIT 20`,
+        [id],
+      ),
+    ]);
+    if (!userRow.rows.length)
+      return res.status(404).json({ message: "User not found." });
+    res.json({
+      user: userRow.rows[0],
+      invoices: invoices.rows,
+      transactions: transactions.rows,
+      auditHistory: auditRows.rows,
+    });
+  } catch (err) {
+    console.error("Admin user profile error:", err);
+    res.status(500).json({ message: "Failed to load user profile." });
+  }
+});
+
+// ─── 2FA MANAGEMENT ─────────────────────────────────────────────────────────────────────
+// POST /admin/2fa/setup — generate a TOTP secret, return base32 + otpauthURL
+router.post("/2fa/setup", adminMiddleware, async (req, res) => {
+  try {
+    const secret = speakeasy.generateSecret({
+      name: `${process.env.BRAND_NAME || "Fonlok"} Admin`,
+      length: 20,
+    });
+    // Store pending secret (not yet enabled)
+    await setSetting("admin_totp_pending", secret.base32);
+    res.json({ base32: secret.base32, otpauthUrl: secret.otpauth_url });
+  } catch (err) {
+    console.error("2FA setup error:", err);
+    res.status(500).json({ message: "Failed to generate 2FA secret." });
+  }
+});
+
+// POST /admin/2fa/verify — confirm OTP and enable 2FA
+router.post("/2fa/verify", adminMiddleware, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ message: "OTP token required." });
+  try {
+    const settings = await getSettings(["admin_totp_pending"]);
+    const pending = settings.admin_totp_pending;
+    if (!pending)
+      return res.status(400).json({ message: "No pending 2FA setup found. Run setup first." });
+    const valid = speakeasy.totp.verify({
+      secret: pending,
+      encoding: "base32",
+      token: String(token).replace(/\s/g, ""),
+      window: 1,
+    });
+    if (!valid) return res.status(400).json({ message: "Invalid OTP. Try again." });
+    await setSetting("admin_totp_secret", pending);
+    await setSetting("admin_totp_enabled", "true");
+    await setSetting("admin_totp_pending", "");
+    await auditLog("2fa_enabled", null, "Admin 2FA enabled");
+    res.json({ message: "Two-factor authentication enabled." });
+  } catch (err) {
+    console.error("2FA verify error:", err);
+    res.status(500).json({ message: "Failed to verify 2FA token." });
+  }
+});
+
+// POST /admin/2fa/disable
+router.post("/2fa/disable", adminMiddleware, async (req, res) => {
+  try {
+    await setSetting("admin_totp_enabled", "false");
+    await setSetting("admin_totp_secret", "");
+    await auditLog("2fa_disabled", null, "Admin 2FA disabled");
+    res.json({ message: "Two-factor authentication disabled." });
+  } catch (err) {
+    console.error("2FA disable error:", err);
+    res.status(500).json({ message: "Failed to disable 2FA." });
+  }
+});
+
+// POST /admin/2fa/login-verify — verify OTP during login, issue adminToken cookie
+router.post("/2fa/login-verify", async (req, res) => {
+  const { tempToken, otp } = req.body;
+  if (!tempToken || !otp)
+    return res.status(400).json({ message: "tempToken and otp are required." });
+  try {
+    let payload;
+    try {
+      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Session expired. Please log in again." });
+    }
+    if (!payload?.isAdminPending)
+      return res.status(401).json({ message: "Invalid session." });
+    const settings = await getSettings(["admin_totp_secret", "admin_totp_enabled"]);
+    if (!bool(settings.admin_totp_enabled))
+      return res.status(400).json({ message: "2FA is not enabled." });
+    const valid = speakeasy.totp.verify({
+      secret: settings.admin_totp_secret,
+      encoding: "base32",
+      token: String(otp).replace(/\s/g, ""),
+      window: 1,
+    });
+    if (!valid) return res.status(401).json({ message: "Invalid OTP code." });
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+    const token = jwt.sign(
+      { isAdmin: true, email: adminEmail },
+      process.env.JWT_SECRET,
+      { expiresIn: "8h" },
+    );
+    res.cookie("adminToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 8 * 60 * 60 * 1000,
+    });
+    res.json({ message: "Logged in successfully." });
+  } catch (err) {
+    console.error("2FA login-verify error:", err);
+    res.status(500).json({ message: "Login failed." });
   }
 });
 
