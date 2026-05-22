@@ -45,7 +45,7 @@ async function notifyBuyerByEmail(invoicenumber, chatId) {
 
     const msg = {
       to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
       subject: `New message from the seller – Invoice ${invoicenumber} | Fonlok`,
       html: emailWrap(
         `<h2 style="color:#0F1F3D;margin:0 0 12px;">The seller replied to you</h2>

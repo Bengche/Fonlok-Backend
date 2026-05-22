@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 const router = express.Router();
 import axios from "axios";
 import dotenv from "dotenv";
@@ -292,7 +292,7 @@ const executePayout = async (invoiceId) => {
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
-    from: process.env.VERIFIED_SENDER,
+    from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
     subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
@@ -354,7 +354,7 @@ const executePayout = async (invoiceId) => {
       const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
       await sgMail.send({
         to: buyer.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: releasedCopy.subject(invoiceRow.invoicenumber),
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
@@ -557,7 +557,7 @@ const executePayoutLink = async (invoiceId) => {
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: invoiceUser.email,
-    from: process.env.VERIFIED_SENDER,
+    from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
     subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
@@ -619,7 +619,7 @@ const executePayoutLink = async (invoiceId) => {
       const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
       await sgMail.send({
         to: buyer.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: releasedCopy.subject(invoiceRow.invoicenumber),
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
@@ -1122,7 +1122,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
       const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
       const sellerMsg = {
         to: seller.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: `Milestone Payment Released - ${milestone.label} | Fonlok`,
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent &mdash; ${milestone.label}</h2>
@@ -1175,7 +1175,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
       const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${invoice.invoicenumber}`;
       await sgMail.send({
         to: buyerRow.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: releasedCopy.subject(invoice.invoicenumber),
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
@@ -1441,7 +1441,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
       const sellerMsg = {
         to: seller.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: payoutCopy.subject(invoice.invoicenumber),
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${milestone.label} - ${payoutCopy.title}</h2>
@@ -1495,7 +1495,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
         const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${invoice.invoicenumber}`;
         await sgMail.send({
           to: buyerUser.email,
-          from: process.env.VERIFIED_SENDER,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: releasedCopy.subject(invoice.invoicenumber),
           html: emailWrap(
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>

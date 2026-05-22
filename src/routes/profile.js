@@ -167,7 +167,8 @@ router.post(
   (req, res, next) => {
     const cookieToken = req.cookies.authToken || req.cookies.token;
     let headerToken = null;
-    const authHeader = req.headers["authorization"] || req.headers["Authorization"];
+    const authHeader =
+      req.headers["authorization"] || req.headers["Authorization"];
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const candidate = authHeader.slice(7);
       if (candidate && candidate !== "undefined" && candidate !== "null") {
@@ -263,7 +264,8 @@ router.post(
       );
       if (invoiceCheck.rows.length === 0) {
         return res.status(403).json({
-          message: "You can only leave a review for a completed and delivered invoice.",
+          message:
+            "You can only leave a review for a completed and delivered invoice.",
         });
       }
 
@@ -297,9 +299,13 @@ router.post(
       //    Same sentiment → 409. Opposite sentiment → UPDATE.
       const invoiceRow = invoiceCheck.rows[0];
       const showInvoiceName = req.body.show_invoice_name === true;
-      const invoiceName = showInvoiceName ? invoiceRow.invoicename || null : null;
+      const invoiceName = showInvoiceName
+        ? invoiceRow.invoicename || null
+        : null;
       const invoiceAmount = showInvoiceName ? invoiceRow.amount || null : null;
-      const invoiceCurrency = showInvoiceName ? invoiceRow.currency || null : null;
+      const invoiceCurrency = showInvoiceName
+        ? invoiceRow.currency || null
+        : null;
 
       let existingReview;
       if (isAuthenticated) {
@@ -321,7 +327,8 @@ router.post(
 
         if (existingIsPositive === newIsPositive) {
           return res.status(409).json({
-            message: "You have already left a review of this type for this seller.",
+            message:
+              "You have already left a review of this type for this seller.",
           });
         }
 
@@ -337,9 +344,20 @@ router.post(
                  invoice_number    = $7,
                  updated_at        = NOW()
            WHERE id = $8`,
-          [rating, comment || null, showInvoiceName, invoiceName, invoiceAmount, invoiceCurrency, invoice_number, existing.id],
+          [
+            rating,
+            comment || null,
+            showInvoiceName,
+            invoiceName,
+            invoiceAmount,
+            invoiceCurrency,
+            invoice_number,
+            existing.id,
+          ],
         );
-        return res.status(200).json({ message: "Your review has been updated.", updated: true });
+        return res
+          .status(200)
+          .json({ message: "Your review has been updated.", updated: true });
       }
 
       // 5. No prior review — insert
@@ -364,10 +382,14 @@ router.post(
         ],
       );
 
-      return res.status(201).json({ message: "Your review has been submitted. Thank you!" });
+      return res
+        .status(201)
+        .json({ message: "Your review has been submitted. Thank you!" });
     } catch (error) {
       console.log(error.message);
-      return res.status(500).json({ message: "Failed to submit review. Please try again." });
+      return res
+        .status(500)
+        .json({ message: "Failed to submit review. Please try again." });
     }
   },
 );
@@ -440,7 +462,7 @@ router.post(
 
       await sgMail.send({
         to: seller.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: `New deal request from ${sender_name} - Fonlok`,
         html: emailWrap(
           `<h2 style="font-size:20px;font-weight:800;color:#0f172a;margin:0 0 8px;">You have a new deal request</h2>

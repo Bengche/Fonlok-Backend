@@ -630,7 +630,7 @@ router.patch("/mark-delivered/:id", async (req, res) => {
     const deliveryCopy = buildEmailCopy(buyerLanguage, "deliveryNotification");
     const deliveryNotificationMsg = {
       to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
       subject: deliveryCopy.subject(invoice.invoicename),
       html: emailWrap(
         `<h2 style="color:#0F1F3D;margin:0 0 12px;">${deliveryCopy.title}</h2>
@@ -767,7 +767,7 @@ router.patch("/milestone/:milestone_id/complete", async (req, res) => {
     // 8. Send email to buyer
     const msg = {
       to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
       subject: `Action Required: Confirm Milestone ${milestone.milestone_number}  - ${invoice.invoicenumber} | Fonlok`,
       html: emailWrap(
         `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone ${milestone.milestone_number} &mdash; Action Required</h2>
@@ -958,7 +958,7 @@ router.post(
           const releaseLink = `${process.env.BACKEND_URL}/api/release-milestone/${ms.release_token}`;
           return sgMail.send({
             to: buyer.email,
-            from: process.env.VERIFIED_SENDER,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
             subject: `Milestone Reminder: Please Confirm Milestone ${ms.milestone_number}  - ${ms.invoicenumber} | Fonlok`,
             html: emailWrap(
               `<h2 style="color:#0F1F3D;margin:0 0 12px;">Reminder &mdash; Milestone ${ms.milestone_number}: ${ms.label}</h2>
@@ -1014,7 +1014,7 @@ router.post(
       try {
         await sgMail.send({
           to: buyer.email,
-          from: process.env.VERIFIED_SENDER,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: `Delivery Reminder: Please Release Funds  - Invoice ${invoice_number} | Fonlok`,
           html: emailWrap(
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">Reminder &mdash; Your Order Has Been Delivered</h2>

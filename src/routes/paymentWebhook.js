@@ -270,7 +270,7 @@ export async function processSuccessfulPayment(paymentUUID) {
 
     const buyerMsg = {
       to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
       subject: buyerEmailSubject,
       html: buyerEmailHtml,
       ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
@@ -303,7 +303,7 @@ export async function processSuccessfulPayment(paymentUUID) {
     const chatCopy = buildEmailCopy(buyerLanguage, "chatInvite");
     const chatInviteMsg = {
       to: buyerEmail,
-      from: process.env.VERIFIED_SENDER,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
       subject: chatCopy.subject(invoice_number),
       html: emailWrap(
         `<h2 style="color:#0F1F3D;margin:0 0 12px;">${chatCopy.title}</h2>
@@ -366,7 +366,7 @@ export async function processSuccessfulPayment(paymentUUID) {
 
       const sellerMsg = {
         to: seller.email,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: invoicePaidCopy.subject(invoice_number),
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${invoicePaidCopy.title}</h2>

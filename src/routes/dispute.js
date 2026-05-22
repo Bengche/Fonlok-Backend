@@ -320,7 +320,7 @@ router.post(
       // 11. Email the admin
       const adminEmailMsg = {
         to: process.env.ADMIN_EMAIL,
-        from: process.env.VERIFIED_SENDER,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: `[Admin] New Dispute Opened  - Invoice ${invoicenumber} | Fonlok`,
         html: emailWrap(
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">New Dispute Opened &mdash; Invoice ${invoicenumber}</h2>
@@ -379,7 +379,7 @@ router.post(
         const sellerDispute = buildEmailCopy(sellerLanguage, "disputeOpened");
         const sellerDisputeMsg = {
           to: sellerEmail,
-          from: process.env.VERIFIED_SENDER,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: sellerDispute.sellerSubject(invoicenumber),
           html: emailWrap(
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${sellerDispute.sellerTitle}</h2>
@@ -438,7 +438,7 @@ router.post(
         const isBuyerOpener = opened_by === "buyer";
         const buyerDisputeMsg = {
           to: buyerEmail,
-          from: process.env.VERIFIED_SENDER,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: buyerDispute.buyerSubject(invoicenumber),
           html: emailWrap(
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${buyerDispute.buyerTitle}</h2>
@@ -974,7 +974,7 @@ router.post(
         try {
           await sgMail.send({
             to: seller.email,
-            from: process.env.VERIFIED_SENDER,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
             subject: `Dispute Resolved: Funds Released to You  -  Invoice ${invoice.invoicenumber} | Fonlok`,
             html: emailWrap(
               `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved  -  Funds Released to You</h2>
@@ -1011,7 +1011,7 @@ router.post(
           if (gR.rows.length > 0) {
             await sgMail.send({
               to: gR.rows[0].email,
-              from: process.env.VERIFIED_SENDER,
+              from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Dispute Update  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved</h2>
@@ -1132,7 +1132,7 @@ router.post(
           if (buyer.email) {
             await sgMail.send({
               to: buyer.email,
-              from: process.env.VERIFIED_SENDER,
+              from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Refund Processed  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Processed  -  Funds Sent to You</h2>
@@ -1170,7 +1170,7 @@ router.post(
           if (sR.rows.length > 0) {
             await sgMail.send({
               to: sR.rows[0].email,
-              from: process.env.VERIFIED_SENDER,
+              from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Dispute Resolved: Refund Issued to Buyer  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved  -  Refund Issued to Buyer</h2>

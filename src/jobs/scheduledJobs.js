@@ -186,7 +186,7 @@ async function runInvoiceReminders() {
         try {
           await sgMail.send({
             to: buyerEmail,
-            from: process.env.VERIFIED_SENDER,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
             subject: subjects[level],
             html: `
               <div style="font-family:sans-serif;max-width:560px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
@@ -299,7 +299,7 @@ async function runDisputeEscalation() {
           try {
             await sgMail.send({
               to: process.env.ADMIN_EMAIL,
-              from: process.env.VERIFIED_SENDER,
+              from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `[Admin Alert] Dispute Unresolved: 72 Hours Elapsed  - Invoice ${dispute.invoicenumber}`,
               html: `
                 <div style="font-family:sans-serif;max-width:560px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
@@ -379,7 +379,7 @@ async function runDisputeEscalation() {
           try {
             await sgMail.send({
               to: process.env.ADMIN_EMAIL,
-              from: process.env.VERIFIED_SENDER,
+              from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `[URGENT] Dispute Unresolved: 7 Days  - Immediate Action Required for Invoice ${dispute.invoicenumber}`,
               html: `
                 <div style="font-family:sans-serif;max-width:560px;border:2px solid #dc2626;border-radius:8px;overflow:hidden;">
@@ -466,10 +466,15 @@ async function runDisputeEscalation() {
 
 async function runWeeklyDigest() {
   try {
-    const now = new Date();
-    const day = now.getDay(); // 0 = Sunday, 5 = Friday
+    // Determine the current day-of-week in Cameroon time (WAT = UTC+1)
+    const nowWAT = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Africa/Douala" }),
+    );
+    const day = nowWAT.getDay(); // 0 = Sunday, 5 = Friday
     if (day !== 5) {
-      console.log("⏭️  [Digest] Skipped (today is not Friday)");
+      console.log(
+        "⏭️  [Digest] Skipped (today is not Friday in Cameroon time)",
+      );
       return;
     }
 
@@ -549,7 +554,7 @@ async function runWeeklyDigest() {
 
         await sgMail.send({
           to: user.email,
-          from: process.env.VERIFIED_SENDER,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: digestCopy.subject,
           html: emailWrap(body, {
             subtitle: "Weekly Performance Summary",
@@ -610,10 +615,14 @@ export async function startScheduledJobs() {
     await runDisputeEscalation();
   });
 
-  // Friday at 09:00 server time
-  cron.schedule("0 9 * * 5", async () => {
-    await runWeeklyDigest();
-  });
+  // Friday at 20:00 Cameroon time (WAT, Africa/Douala = UTC+1)
+  cron.schedule(
+    "0 20 * * 5",
+    async () => {
+      await runWeeklyDigest();
+    },
+    { timezone: "Africa/Douala" },
+  );
 
   console.log(
     "⏰ Scheduled jobs active &mdash; invoice reminders + dispute escalation + weekly digest",
