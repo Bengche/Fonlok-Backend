@@ -1983,7 +1983,7 @@ router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
     const [userRow, invoices, payouts, payments, auditRows] = await Promise.all([
       db.query(
         `SELECT id, name, username, email, phone, wallet_balance, kyc_status,
-                is_suspended, deleted_at, created_at, referral_code, referred_by
+                is_suspended, deleted_at, createdat, referral_code, referred_by
          FROM users WHERE id=$1 LIMIT 1`,
         [id],
       ),
