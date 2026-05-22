@@ -226,6 +226,33 @@ router.post(
       res.status(201).json({ ok: true });
       console.log(`✅ User Registered Successfully`);
     } catch (error) {
+      // Handle PostgreSQL unique constraint violations with specific messages
+      if (error.code === "23505") {
+        const detail = (error.detail || "").toLowerCase();
+        const constraint = (error.constraint || "").toLowerCase();
+        if (detail.includes("email") || constraint.includes("email")) {
+          return res.status(409).json({
+            message:
+              "An account with this email address already exists. Please log in or use a different email.",
+          });
+        }
+        if (detail.includes("username") || constraint.includes("username")) {
+          return res.status(409).json({
+            message:
+              "This username is already taken. Please choose a different username.",
+          });
+        }
+        if (detail.includes("phone") || constraint.includes("phone")) {
+          return res.status(409).json({
+            message:
+              "An account with this phone number already exists. Please log in or use a different phone number.",
+          });
+        }
+        return res.status(409).json({
+          message:
+            "An account with these details already exists. Please check your information and try again.",
+        });
+      }
       console.log(error.message);
       res
         .status(500)
