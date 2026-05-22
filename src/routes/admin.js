@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import db from "../controllers/db.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 import sgMail from "@sendgrid/mail";
-import { emailWrap } from "../utils/emailTemplate.js";
+import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
 import { BRAND } from "../config/brand.js";
 import { getSettings, setSetting, bool } from "../utils/platformSettings.js";
 dotenv.config();
@@ -1154,8 +1154,8 @@ router.post("/kyc/:id/approve", adminMiddleware, async (req, res) => {
       try {
         await sgMail.send({
           to: userEmail,
-          from: { name: BRAND.name, email: BRAND.supportEmail },
-          subject: `${BRAND.name} — Your Identity Has Been Verified ✓`,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+          subject: `${BRAND.name} — Your Identity Has Been Verified`,
           html: emailWrap(body, { subtitle: "Identity Verification" }),
         });
       } catch (e) {
@@ -1238,7 +1238,7 @@ router.post("/kyc/:id/reject", adminMiddleware, async (req, res) => {
       try {
         await sgMail.send({
           to: userEmail,
-          from: { name: BRAND.name, email: BRAND.supportEmail },
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: `${BRAND.name} — Identity Verification Update`,
           html: emailWrap(body, { subtitle: "Identity Verification" }),
         });
