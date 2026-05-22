@@ -30,8 +30,11 @@ import {
   revokeOtherUserSessions,
   revokeUserSession,
 } from "../utils/sessionSecurity.js";
+import sgMail from "@sendgrid/mail";
+import { emailWrap, emailTable } from "../utils/emailTemplate.js";
 import dotenv from "dotenv";
 dotenv.config();
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const saltRounds = 10;
 
@@ -617,6 +620,91 @@ router.post(
       return res
         .status(500)
         .json({ message: "Failed to dismiss onboarding checklist." });
+    }
+  },
+);
+
+// ── GET /user/suspension-status ──────────────────────────────────────────────
+// Returns the caller's own suspension info. Exempt from suspension guard so
+// suspended users can always fetch their status to render the dashboard banner.
+router.get("/suspension-status", authMiddleware, async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT is_suspended, suspended_until, suspension_reason, suspended_at,
+              appeal_status, appeal_text, appeal_at, appeal_admin_note
+       FROM users WHERE id = $1`,
+      [req.user.id],
+    );
+    if (!r.rows.length) return res.status(404).json({ message: "User not found." });
+    const s = r.rows[0];
+    const isActive =
+      s.is_suspended &&
+      (s.suspended_until === null || new Date(s.suspended_until) > new Date());
+    return res.json({ ...s, isActive });
+  } catch (err) {
+    console.error("suspension-status error:", err.message);
+    return res.status(500).json({ message: "Failed to fetch suspension status." });
+  }
+});
+
+// ── POST /user/appeal ────────────────────────────────────────────────────────
+// Submit an appeal for account reinstatement. Exempt from suspension guard.
+router.post(
+  "/appeal",
+  authMiddleware,
+  [body("text").trim().notEmpty().withMessage("Appeal text is required.")
+    .isLength({ min: 20, max: 2000 }).withMessage("Appeal must be between 20 and 2000 characters.")],
+  validate,
+  async (req, res) => {
+    const userId = req.user.id;
+    const { text } = req.body;
+    try {
+      const check = await db.query(
+        "SELECT is_suspended, appeal_status FROM users WHERE id = $1",
+        [userId],
+      );
+      if (!check.rows.length) return res.status(404).json({ message: "User not found." });
+      const { is_suspended, appeal_status } = check.rows[0];
+      if (!is_suspended) return res.status(400).json({ message: "Your account is not suspended." });
+      if (appeal_status === "pending") return res.status(409).json({ message: "You already have a pending appeal. Please wait for our team to review it." });
+
+      await db.query(
+        `UPDATE users SET appeal_text = $1, appeal_status = 'pending', appeal_at = NOW()
+         WHERE id = $2`,
+        [text.trim(), userId],
+      );
+
+      // Notify admin by email
+      const adminEmail = process.env.ADMIN_EMAIL;
+      const uRes = await db.query("SELECT name, username, email FROM users WHERE id = $1", [userId]);
+      const u = uRes.rows[0] || {};
+      if (adminEmail && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+        try {
+          await sgMail.send({
+            to: adminEmail,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: `[Fonlok] New Suspension Appeal — @${u.username || u.email}`,
+            html: emailWrap(`
+              <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">New Suspension Appeal</h2>
+              <p style="color:#475569;margin:0 0 18px;line-height:1.6;">A suspended user has submitted an appeal requesting account reinstatement.</p>
+              ${emailTable([
+                ["User", u.name || "—"],
+                ["Username", u.username ? `@${u.username}` : "—"],
+                ["Email", u.email || "—"],
+                ["Submitted", new Date().toLocaleString("en-GB")],
+              ])}
+              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin:16px 0;">
+                <p style="margin:0;color:#334155;font-size:14px;line-height:1.7;">${text.trim().replace(/\n/g, "<br>")}</p>
+              </div>
+            `, { subtitle: "Admin — Account Appeals" }),
+          });
+        } catch { /* non-fatal */ }
+      }
+
+      return res.json({ ok: true, message: "Your appeal has been submitted. Our team will review it within 1–3 business days." });
+    } catch (err) {
+      console.error("Appeal submit error:", err.message);
+      return res.status(500).json({ message: "Failed to submit appeal. Please try again." });
     }
   },
 );

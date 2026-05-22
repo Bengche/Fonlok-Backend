@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import db from "../controllers/db.js";
 import { clearAuthCookie, touchUserSession } from "../utils/sessionSecurity.js";
 dotenv.config();
 
@@ -36,6 +37,44 @@ const authMiddleware = async (req, res, next) => {
       }
     }
     req.user = decoded;
+
+    // ── Suspension check ────────────────────────────────────────────────────
+    // Runs on every authenticated request. Exempt routes: /appeal, /suspension-status.
+    // These exemptions let suspended users view their status and submit an appeal.
+    try {
+      const suspRow = await db.query(
+        `SELECT is_suspended, suspended_until, suspension_reason, appeal_status
+         FROM users WHERE id = $1`,
+        [decoded.id],
+      );
+      if (suspRow.rows.length) {
+        const s = suspRow.rows[0];
+        const isActive =
+          s.is_suspended &&
+          (s.suspended_until === null ||
+            new Date(s.suspended_until) > new Date());
+        if (isActive) {
+          req.user.is_suspended = true;
+          req.user.suspended_until = s.suspended_until;
+          req.user.suspension_reason = s.suspension_reason;
+          req.user.appeal_status = s.appeal_status;
+          const exempted = ["/appeal", "/suspension-status"];
+          const isExempt = exempted.some((p) => req.path === p || req.path.startsWith(p + "?"));
+          if (!isExempt) {
+            return res.status(403).json({
+              code: "ACCOUNT_SUSPENDED",
+              message: "Your account has been suspended. You cannot perform this action.",
+              suspension_reason: s.suspension_reason,
+              suspended_until: s.suspended_until,
+              appeal_status: s.appeal_status,
+            });
+          }
+        }
+      }
+    } catch {
+      /* non-fatal — don't block auth if suspension check fails */
+    }
+
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

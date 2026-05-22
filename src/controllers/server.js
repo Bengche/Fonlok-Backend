@@ -471,4 +471,22 @@ app.listen(PORT, async () => {
   } catch (err) {
     logger.warn("reviews enhancement migration failed", { error: err.message });
   }
+
+  // Add account suspension columns to users table.
+  try {
+    await db.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS is_suspended        BOOLEAN      NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS suspended_until     TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS suspension_reason   TEXT         DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS suspended_at        TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS appeal_text         TEXT         DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS appeal_status       VARCHAR(20)  NOT NULL DEFAULT 'none',
+        ADD COLUMN IF NOT EXISTS appeal_at           TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS appeal_admin_note   TEXT         DEFAULT NULL;
+    `);
+    logger.info("users suspension columns ready");
+  } catch (err) {
+    logger.warn("users suspension migration failed", { error: err.message });
+  }
 });
