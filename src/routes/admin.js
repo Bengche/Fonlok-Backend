@@ -100,11 +100,9 @@ router.post("/login", async (req, res) => {
     res.json({ message: "Logged in successfully." });
   } catch (err) {
     console.error("Admin login error:", err.message);
-    return res
-      .status(500)
-      .json({
-        message: "Login failed due to a server error. Please try again.",
-      });
+    return res.status(500).json({
+      message: "Login failed due to a server error. Please try again.",
+    });
   }
 });
 
@@ -1980,34 +1978,35 @@ router.patch("/feature-requests/:id", adminMiddleware, async (req, res) => {
 router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
-    const [userRow, invoices, payouts, payments, auditRows] = await Promise.all([
-      db.query(
-        `SELECT id, name, username, email, phone, wallet_balance, kyc_status,
+    const [userRow, invoices, payouts, payments, auditRows] = await Promise.all(
+      [
+        db.query(
+          `SELECT id, name, username, email, phone, wallet_balance, kyc_status,
                 is_suspended, deleted_at, createdat, referral_code, referred_by
          FROM users WHERE id=$1 LIMIT 1`,
-        [id],
-      ),
-      // Invoices where this user is the seller (creator)
-      db.query(
-        `SELECT id, invoicename AS title, amount, status, createdat AS created_at
+          [id],
+        ),
+        // Invoices where this user is the seller (creator)
+        db.query(
+          `SELECT id, invoicename AS title, amount, status, createdat AS created_at
          FROM invoices WHERE userid=$1
          ORDER BY createdat DESC LIMIT 10`,
-        [id],
-      ),
-      // Payouts received as a seller
-      db.query(
-        `SELECT p.id, p.amount, p.status, p.createdat AS created_at,
+          [id],
+        ),
+        // Payouts received as a seller
+        db.query(
+          `SELECT p.id, p.amount, p.status, p.createdat AS created_at,
                 COALESCE(i.invoicename, 'Payout') AS label,
                 'payout' AS type
          FROM payouts p
          LEFT JOIN invoices i ON i.invoicenumber = p.invoice_number
          WHERE p.userid=$1
          ORDER BY p.createdat DESC LIMIT 10`,
-        [id],
-      ),
-      // Payments made as a buyer (via guests table linking)
-      db.query(
-        `SELECT pm.id, pm.amount, pm.status, pm.createdat AS created_at,
+          [id],
+        ),
+        // Payments made as a buyer (via guests table linking)
+        db.query(
+          `SELECT pm.id, pm.amount, pm.status, pm.createdat AS created_at,
                 COALESCE(i.invoicename, 'Payment') AS label,
                 'payment' AS type
          FROM payments pm
@@ -2015,23 +2014,27 @@ router.get("/users/:id/profile", adminMiddleware, async (req, res) => {
          JOIN guests g ON g.invoicenumber = i.invoicenumber
          WHERE g.registered_userid=$1
          ORDER BY pm.createdat DESC LIMIT 10`,
-        [id],
-      ),
-      db.query(
-        `SELECT action, detail, created_at
+          [id],
+        ),
+        db.query(
+          `SELECT action, detail, created_at
          FROM admin_audit_log WHERE target_id=$1
          ORDER BY created_at DESC LIMIT 20`,
-        [id],
-      ),
-    ]);
+          [id],
+        ),
+      ],
+    );
     if (!userRow.rows.length)
       return res.status(404).json({ message: "User not found." });
     res.json({
       user: userRow.rows[0],
       invoices: invoices.rows,
-      transactions: [...payouts.rows, ...payments.rows].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      ).slice(0, 20),
+      transactions: [...payouts.rows, ...payments.rows]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        .slice(0, 20),
       auditHistory: auditRows.rows,
     });
   } catch (err) {
