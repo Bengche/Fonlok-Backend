@@ -456,14 +456,16 @@ app.listen(PORT, async () => {
   try {
     await db.query(`
       ALTER TABLE reviews
-        ADD COLUMN IF NOT EXISTS pinned             BOOLEAN     DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS seller_reply       TEXT        DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS reply_created_at   TIMESTAMPTZ DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS show_invoice_name  BOOLEAN     DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS invoice_name       TEXT        DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS invoice_amount     NUMERIC     DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS invoice_currency   VARCHAR(10) DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT NULL;
+        ADD COLUMN IF NOT EXISTS pinned             BOOLEAN      DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS seller_reply       TEXT         DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS reply_created_at   TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS show_invoice_name  BOOLEAN      DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS invoice_name       TEXT         DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_amount     NUMERIC      DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_currency   VARCHAR(10)  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS reviewer_email     VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS reviewer_name      VARCHAR(100) DEFAULT NULL;
     `);
     logger.info("reviews enhancement columns ready");
   } catch (err) {

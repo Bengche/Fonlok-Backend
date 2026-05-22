@@ -1,5 +1,6 @@
 import express from "express";
 const router = express.Router();
+import jwt from "jsonwebtoken";
 import db from "../controllers/db.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import dotenv from "dotenv";
@@ -157,10 +158,33 @@ router.patch(
 );
 
 // POST /profile/review
-// Authenticated buyers can leave a review after a completed transaction
+// Buyers can leave a review after a completed transaction.
+// Works for both authenticated users and guests (no account required).
 router.post(
   "/review",
-  authMiddleware,
+  // Optional auth: attach req.user if a valid token is present, but do not
+  // block the request if there is no token.
+  (req, res, next) => {
+    const cookieToken = req.cookies.authToken || req.cookies.token;
+    let headerToken = null;
+    const authHeader = req.headers["authorization"] || req.headers["Authorization"];
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const candidate = authHeader.slice(7);
+      if (candidate && candidate !== "undefined" && candidate !== "null") {
+        headerToken = candidate;
+      }
+    }
+    const token = cookieToken || headerToken;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+      } catch (_) {
+        // Expired / invalid token — treat as guest
+      }
+    }
+    next();
+  },
   [
     body("seller_username")
       .trim()
@@ -188,11 +212,38 @@ router.post(
       .isLength({ max: 1000 })
       .withMessage("Review comment must be 1000 characters or fewer.")
       .escape(),
+
+    // Required only for guest reviewers
+    body("reviewer_name")
+      .if((_, { req }) => !req.user)
+      .trim()
+      .notEmpty()
+      .withMessage("Your name is required.")
+      .isLength({ max: 100 })
+      .withMessage("Name must be 100 characters or fewer.")
+      .escape(),
+
+    body("reviewer_email")
+      .if((_, { req }) => !req.user)
+      .trim()
+      .notEmpty()
+      .withMessage("Your email is required.")
+      .isEmail()
+      .withMessage("A valid email address is required.")
+      .normalizeEmail(),
   ],
   validate,
   async (req, res) => {
-    const reviewerId = req.user.id;
-    const { seller_username, invoice_number, rating, comment } = req.body;
+    const isAuthenticated = !!req.user;
+    const reviewerId = isAuthenticated ? req.user.id : null;
+    const {
+      seller_username,
+      invoice_number,
+      rating,
+      comment,
+      reviewer_email: guestEmail,
+      reviewer_name: guestName,
+    } = req.body;
 
     try {
       // 1. Find the seller
@@ -205,31 +256,37 @@ router.post(
       }
       const sellerId = sellerResult.rows[0].id;
 
-      // 2. Make sure the invoice actually exists and is delivered or completed
-      // Status flow: delivered = seller marked done, completed = payout was processed
+      // 2. Invoice must be delivered or completed
       const invoiceCheck = await db.query(
         "SELECT * FROM invoices WHERE invoicenumber = $1 AND status IN ('delivered', 'completed')",
         [invoice_number],
       );
       if (invoiceCheck.rows.length === 0) {
         return res.status(403).json({
-          message:
-            "You can only leave a review for a completed and delivered invoice.",
+          message: "You can only leave a review for a completed and delivered invoice.",
         });
       }
 
-      // 3. Make sure the reviewer was actually the buyer on this invoice.
-      // Match on user_id when available; fall back to email match for buyers
-      // who paid without being logged in (user_id stored as NULL at payment time).
-      const buyerCheck = await db.query(
-        `SELECT * FROM guests
-         WHERE invoicenumber = $1
-           AND (
-             user_id = $2
-             OR email = (SELECT email FROM users WHERE id = $2)
-           )`,
-        [invoice_number, reviewerId],
-      );
+      // 3. Verify the reviewer actually paid this invoice.
+      //    Authenticated: match by user_id OR by their account email.
+      //    Guest: match by the email they entered.
+      let buyerCheck;
+      if (isAuthenticated) {
+        buyerCheck = await db.query(
+          `SELECT * FROM guests
+           WHERE invoicenumber = $1
+             AND (
+               user_id = $2
+               OR email = (SELECT email FROM users WHERE id = $2)
+             )`,
+          [invoice_number, reviewerId],
+        );
+      } else {
+        buyerCheck = await db.query(
+          "SELECT * FROM guests WHERE invoicenumber = $1 AND email = $2",
+          [invoice_number, guestEmail],
+        );
+      }
       if (buyerCheck.rows.length === 0) {
         return res.status(403).json({
           message: "You can only review sellers for invoices you have paid.",
@@ -237,22 +294,25 @@ router.post(
       }
 
       // 4. One review per buyer-seller pair.
-      // Same sentiment as the existing review → 409.
-      // Opposite sentiment (positive ↔ negative) → UPDATE the existing review.
+      //    Same sentiment → 409. Opposite sentiment → UPDATE.
       const invoiceRow = invoiceCheck.rows[0];
       const showInvoiceName = req.body.show_invoice_name === true;
-      const invoiceName = showInvoiceName
-        ? invoiceRow.invoicename || null
-        : null;
+      const invoiceName = showInvoiceName ? invoiceRow.invoicename || null : null;
       const invoiceAmount = showInvoiceName ? invoiceRow.amount || null : null;
-      const invoiceCurrency = showInvoiceName
-        ? invoiceRow.currency || null
-        : null;
+      const invoiceCurrency = showInvoiceName ? invoiceRow.currency || null : null;
 
-      const existingReview = await db.query(
-        "SELECT id, rating FROM reviews WHERE reviewer_userid = $1 AND seller_userid = $2",
-        [reviewerId, sellerId],
-      );
+      let existingReview;
+      if (isAuthenticated) {
+        existingReview = await db.query(
+          "SELECT id, rating FROM reviews WHERE reviewer_userid = $1 AND seller_userid = $2",
+          [reviewerId, sellerId],
+        );
+      } else {
+        existingReview = await db.query(
+          "SELECT id, rating FROM reviews WHERE reviewer_email = $1 AND seller_userid = $2",
+          [guestEmail, sellerId],
+        );
+      }
 
       if (existingReview.rows.length > 0) {
         const existing = existingReview.rows[0];
@@ -261,8 +321,7 @@ router.post(
 
         if (existingIsPositive === newIsPositive) {
           return res.status(409).json({
-            message:
-              "You have already left a review of this type for this seller.",
+            message: "You have already left a review of this type for this seller.",
           });
         }
 
@@ -277,32 +336,23 @@ router.post(
                  invoice_currency  = $6,
                  invoice_number    = $7,
                  updated_at        = NOW()
-           WHERE reviewer_userid = $8 AND seller_userid = $9`,
-          [
-            rating,
-            comment || null,
-            showInvoiceName,
-            invoiceName,
-            invoiceAmount,
-            invoiceCurrency,
-            invoice_number,
-            reviewerId,
-            sellerId,
-          ],
+           WHERE id = $8`,
+          [rating, comment || null, showInvoiceName, invoiceName, invoiceAmount, invoiceCurrency, invoice_number, existing.id],
         );
-        return res
-          .status(200)
-          .json({ message: "Your review has been updated.", updated: true });
+        return res.status(200).json({ message: "Your review has been updated.", updated: true });
       }
 
       // 5. No prior review — insert
       await db.query(
         `INSERT INTO reviews
-          (reviewer_userid, seller_userid, invoice_number, rating, comment,
+          (reviewer_userid, reviewer_email, reviewer_name, seller_userid,
+           invoice_number, rating, comment,
            show_invoice_name, invoice_name, invoice_amount, invoice_currency)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [
           reviewerId,
+          isAuthenticated ? null : guestEmail,
+          isAuthenticated ? null : guestName,
           sellerId,
           invoice_number,
           rating,
@@ -314,14 +364,10 @@ router.post(
         ],
       );
 
-      return res
-        .status(201)
-        .json({ message: "Your review has been submitted. Thank you!" });
+      return res.status(201).json({ message: "Your review has been submitted. Thank you!" });
     } catch (error) {
       console.log(error.message);
-      return res
-        .status(500)
-        .json({ message: "Failed to submit review. Please try again." });
+      return res.status(500).json({ message: "Failed to submit review. Please try again." });
     }
   },
 );
