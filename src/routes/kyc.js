@@ -402,8 +402,9 @@ router.post("/submit", authMiddleware, (req, res) => {
       try {
         await sgMail.send({
           to: userEmail,
-          from: { name: BRAND.name, email: BRAND.supportEmail },
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: `${BRAND.name} — Identity Verification Received`,
+
           html: emailWrap(body, { subtitle: "Identity Verification" }),
         });
       } catch (emailErr) {
@@ -439,8 +440,9 @@ router.post("/submit", authMiddleware, (req, res) => {
       try {
         await sgMail.send({
           to: adminEmail,
-          from: { name: BRAND.name, email: BRAND.supportEmail },
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: `[${BRAND.name}] New KYC Request — ${fullName}`,
+
           html: emailWrap(adminBody, { subtitle: "Admin — Compliance Review" }),
         });
       } catch (emailErr) {
