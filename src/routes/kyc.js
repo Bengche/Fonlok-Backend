@@ -159,12 +159,10 @@ router.post("/submit", authMiddleware, (req, res) => {
 
     const validDocTypes = ["national_id", "drivers_license", "passport"];
     if (!validDocTypes.includes(docType)) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Invalid document type. Choose national_id, drivers_license, or passport.",
-        });
+      return res.status(400).json({
+        message:
+          "Invalid document type. Choose national_id, drivers_license, or passport.",
+      });
     }
     if (!fullName || fullName.length < 3) {
       return res
@@ -172,12 +170,10 @@ router.post("/submit", authMiddleware, (req, res) => {
         .json({ message: "Full name is required (minimum 3 characters)." });
     }
     if (!validateDob(dob)) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "A valid date of birth is required. You must be at least 16 years old.",
-        });
+      return res.status(400).json({
+        message:
+          "A valid date of birth is required. You must be at least 16 years old.",
+      });
     }
     if (!nationality)
       return res.status(400).json({ message: "Nationality is required." });
@@ -450,13 +446,11 @@ router.post("/submit", authMiddleware, (req, res) => {
       }
     }
 
-    return res
-      .status(200)
-      .json({
-        message:
-          "Verification submitted successfully. We will review your documents within 1–3 business days.",
-        status: "pending",
-      });
+    return res.status(200).json({
+      message:
+        "Verification submitted successfully. We will review your documents within 1–3 business days.",
+      status: "pending",
+    });
   });
 });
 
