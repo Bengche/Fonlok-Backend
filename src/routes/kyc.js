@@ -410,39 +410,42 @@ router.post("/submit", authMiddleware, (req, res) => {
 
     // ── 8. Email to admin ──────────────────────────────────────────────────────
     const adminEmail = process.env.ADMIN_EMAIL;
-    if (adminEmail && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
-      const docTypeLabel =
-        {
-          national_id: "National ID Card",
-          drivers_license: "Driver's Licence",
-          passport: "International Passport",
-        }[docType] || docType;
-      const adminBody = `
-        <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">New KYC Verification Request</h2>
-        <p style="color:#475569;margin:0 0 18px;line-height:1.6;">A user has submitted a new identity verification request and is awaiting your review.</p>
-        ${emailTable([
-          ["User ID", String(userId)],
-          ["Full Name", fullName],
-          ["Document Type", docTypeLabel],
-          ["Document Number", docNumber],
-          ["Nationality", nationality],
-          ["Phone", phone],
-          ["City / Country", `${city}, ${country}`],
-          ["Date of Birth", dob],
-          ["Submitted At", new Date().toLocaleString("en-GB")],
-        ])}
-        ${emailButtonNavy(`${process.env.FRONTEND_URL || BRAND.siteUrl}/admin/dashboard`, "Review in Admin Dashboard")}
-      `;
+    if (!adminEmail) {
+      logger.warn("KYC admin email skipped: ADMIN_EMAIL env var is not set");
+    } else if (!process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+      logger.warn("KYC admin email skipped: SENDGRID_API_KEY is not configured");
+    } else {
       try {
+        const docTypeLabel =
+          {
+            national_id: "National ID Card",
+            drivers_license: "Driver's Licence",
+            passport: "International Passport",
+          }[docType] || docType;
+        const adminBody = `
+          <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">New KYC Verification Request</h2>
+          <p style="color:#475569;margin:0 0 18px;line-height:1.6;">A user has submitted a new identity verification request and is awaiting your review.</p>
+          ${emailTable([
+            ["User ID", String(userId)],
+            ["Full Name", fullName],
+            ["Document Type", docTypeLabel],
+            ["Document Number", docNumber],
+            ["Nationality", nationality],
+            ["Phone", phone],
+            ["City / Country", `${city}, ${country}`],
+            ["Date of Birth", dob],
+            ["Submitted At", new Date().toLocaleString("en-GB")],
+          ])}
+          ${emailButtonNavy(`${process.env.FRONTEND_URL || BRAND.siteUrl}/admin/dashboard`, "Review in Admin Dashboard")}
+        `;
         await sgMail.send({
           to: adminEmail,
           from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
           subject: `[${BRAND.name}] New KYC Request — ${fullName}`,
-
           html: emailWrap(adminBody, { subtitle: "Admin — Compliance Review" }),
         });
       } catch (emailErr) {
-        logger.warn("KYC admin email failed", { error: emailErr.message });
+        logger.error("KYC admin email failed", { error: emailErr.message, adminEmail });
       }
     }
 

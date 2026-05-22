@@ -70,9 +70,10 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ message: "Invalid admin credentials." });
   }
 
+  try {
   // Check if 2FA is enabled
-  const settings = await getSettings(["admin_totp_enabled"]);
-  if (bool(settings.admin_totp_enabled)) {
+  const settings = await getSettings();
+  if (bool(settings, "admin_totp_enabled")) {
     // Issue a short-lived pending token — no cookie yet
     const tempToken = jwt.sign(
       { isAdminPending: true, email: adminEmail },
@@ -97,6 +98,10 @@ router.post("/login", async (req, res) => {
 
   console.log(`✅ Admin logged in: ${adminEmail}`);
   res.json({ message: "Logged in successfully." });
+  } catch (err) {
+    console.error("Admin login error:", err.message);
+    return res.status(500).json({ message: "Login failed due to a server error. Please try again." });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2088,11 +2093,8 @@ router.post("/2fa/login-verify", async (req, res) => {
     }
     if (!payload?.isAdminPending)
       return res.status(401).json({ message: "Invalid session." });
-    const settings = await getSettings([
-      "admin_totp_secret",
-      "admin_totp_enabled",
-    ]);
-    if (!bool(settings.admin_totp_enabled))
+    const settings = await getSettings();
+    if (!bool(settings, "admin_totp_enabled"))
       return res.status(400).json({ message: "2FA is not enabled." });
     const valid = speakeasy.totp.verify({
       secret: settings.admin_totp_secret,
