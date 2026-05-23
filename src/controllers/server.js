@@ -188,6 +188,8 @@ app.post("/auth/login", loginLimiter);
 app.post("/auth/login/verify-otp", loginOtpLimiter);
 app.post("/auth/login/resend-otp", loginOtpLimiter);
 app.post("/auth/register", registerLimiter);
+app.post("/auth/verify-email", registerLimiter);
+app.post("/auth/resend-verification", registerLimiter);
 app.post("/auth/forgot-password", forgotPasswordLimiter);
 app.post("/auth/reset-password", resetPasswordLimiter);
 app.post(

@@ -100,7 +100,7 @@ router.post(
     const normalizedEmail = email.toLowerCase();
     try {
       const result = await db.query(
-        "SELECT id, name, username, email, password, two_factor_enabled FROM users WHERE email = $1 OR username = $2",
+        "SELECT id, name, username, email, password, two_factor_enabled, email_verified FROM users WHERE email = $1 OR username = $2",
         [normalizedEmail, email],
       );
       if (result.rows.length === 0) {
@@ -109,6 +109,17 @@ router.post(
         return res.status(401).json({ message: "Invalid email or password." });
       }
       const user = result.rows[0];
+
+      // Block login for unverified accounts
+      if (!user.email_verified) {
+        return res.status(403).json({
+          code: "EMAIL_NOT_VERIFIED",
+          message:
+            "Please verify your email address before signing in. Check your inbox for the verification code.",
+          email: user.email,
+        });
+      }
+
       const userPassword = user.password;
       const isMatch = await bcrypt.compare(password, userPassword);
       if (isMatch) {
