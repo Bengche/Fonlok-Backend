@@ -2334,9 +2334,8 @@ router.post(
 
       // 11. Push notification to seller (best-effort)
       try {
-        const { notifyUser } = await import(
-          "../middleware/notificationHelper.js"
-        );
+        const { notifyUser } =
+          await import("../middleware/notificationHelper.js");
         await notifyUser(
           invoice.userid,
           "funds_released",
@@ -2362,15 +2361,25 @@ router.post(
               ${emailTable([
                 ["Invoice", invoicenumber],
                 ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
-                ["Platform Fee (2%)", `-${totalFee.toLocaleString()} XAF`, "color:#dc2626;"],
-                ["Amount Sent to You", `${sellerShare.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                [
+                  "Platform Fee (2%)",
+                  `-${totalFee.toLocaleString()} XAF`,
+                  "color:#dc2626;",
+                ],
+                [
+                  "Amount Sent to You",
+                  `${sellerShare.toLocaleString()} XAF`,
+                  "font-weight:700;color:#16a34a;font-size:15px;",
+                ],
                 ["Sent To", seller.phone],
                 ["Admin Note", escapeHtml(note)],
               ])}
               <p style="color:#64748b;font-size:0.85rem;margin:16px 0 0;line-height:1.6;">
                 This action was taken by the ${BRAND.name} admin team because the buyer was unresponsive. The funds have been disbursed to your registered Mobile Money number.
               </p>`,
-              { footerNote: `${BRAND.name} Escrow — admin-initiated fund release.` },
+              {
+                footerNote: `${BRAND.name} Escrow — admin-initiated fund release.`,
+              },
             ),
           });
         } catch (e) {
@@ -2583,9 +2592,8 @@ router.post(
       const seller = sellerR.rows[0] ?? null;
 
       try {
-        const { notifyUser } = await import(
-          "../middleware/notificationHelper.js"
-        );
+        const { notifyUser } =
+          await import("../middleware/notificationHelper.js");
         await notifyUser(
           invoice.userid,
           "refund_issued",
@@ -2611,8 +2619,16 @@ router.post(
               ${emailTable([
                 ["Invoice", invoicenumber],
                 ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
-                ["Platform Fee (2%)", `-${totalFee.toLocaleString()} XAF`, "color:#dc2626;"],
-                ["Refund Sent to You", `${refundAmount.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                [
+                  "Platform Fee (2%)",
+                  `-${totalFee.toLocaleString()} XAF`,
+                  "color:#dc2626;",
+                ],
+                [
+                  "Refund Sent to You",
+                  `${refundAmount.toLocaleString()} XAF`,
+                  "font-weight:700;color:#16a34a;font-size:15px;",
+                ],
                 ["Sent To", buyer.momo_number],
                 ["Admin Note", escapeHtml(note)],
               ])}`,
@@ -2634,7 +2650,9 @@ router.post(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Issued to Buyer</h2>
                 <p style="color:#475569;">Hello ${escapeHtml(seller.name)}, the ${BRAND.name} admin team has reviewed invoice <strong>${escapeHtml(invoicenumber)}</strong> and issued a refund to the buyer.</p>
                 <p style="color:#475569;font-size:0.88rem;line-height:1.6;">If you believe this decision was made in error, please contact us at <a href="mailto:${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}" style="color:#F59E0B;">${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}</a>.</p>`,
-                { footerNote: `${BRAND.name} Escrow — admin-initiated refund notification.` },
+                {
+                  footerNote: `${BRAND.name} Escrow — admin-initiated refund notification.`,
+                },
               ),
             });
           } catch (e) {
