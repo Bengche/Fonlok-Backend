@@ -2,6 +2,7 @@ import express from "express";
 const router = express.Router();
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import axios from "axios";
 import db from "../controllers/db.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 import sgMail from "@sendgrid/mail";
@@ -2147,5 +2148,523 @@ router.post("/2fa/login-verify", async (req, res) => {
     res.status(500).json({ message: "Login failed." });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/invoices/:invoicenumber/release
+// Admin manually releases escrowed funds to the seller — no dispute required.
+// Used when the buyer is unresponsive and has not released or opened a dispute.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+  "/invoices/:invoicenumber/release",
+  adminMiddleware,
+  async (req, res) => {
+    const { invoicenumber } = req.params;
+    const { admin_note } = req.body;
+
+    if (
+      !admin_note ||
+      typeof admin_note !== "string" ||
+      admin_note.trim().length < 5
+    ) {
+      return res
+        .status(400)
+        .json({ message: "An admin note (minimum 5 characters) is required." });
+    }
+    const note = admin_note.trim().slice(0, 1000);
+
+    try {
+      // 1. Fetch the invoice
+      const invR = await db.query(
+        "SELECT * FROM invoices WHERE invoicenumber = $1",
+        [invoicenumber],
+      );
+      if (invR.rows.length === 0)
+        return res.status(404).json({ message: "Invoice not found." });
+
+      const invoice = invR.rows[0];
+
+      if (!["paid", "delivered"].includes(invoice.status)) {
+        return res.status(400).json({
+          message: `Invoice is in '${invoice.status}' status. Only 'paid' or 'delivered' invoices can be manually released.`,
+        });
+      }
+
+      // 2. Block if an open dispute already exists — use the dispute flow instead
+      const disputeR = await db.query(
+        "SELECT id, status FROM disputes WHERE invoicenumber = $1 AND (status = 'open' OR status LIKE 'partially%')",
+        [invoicenumber],
+      );
+      if (disputeR.rows.length > 0) {
+        return res.status(409).json({
+          message:
+            "An open dispute exists for this invoice. Use the dispute resolution flow to release funds.",
+        });
+      }
+
+      // 3. Fetch seller
+      const sellerR = await db.query("SELECT * FROM users WHERE id = $1", [
+        invoice.userid,
+      ]);
+      if (sellerR.rows.length === 0)
+        return res.status(404).json({ message: "Seller account not found." });
+      const seller = sellerR.rows[0];
+
+      // 4. Determine effective amount (live milestone re-query for installment invoices)
+      const isMilestone = invoice.payment_type === "installment";
+      let effectiveAmount = Number(invoice.amount);
+      let unreleasedMilestones = [];
+
+      if (isMilestone) {
+        const msR = await db.query(
+          "SELECT * FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released' ORDER BY milestone_number ASC",
+          [invoice.id],
+        );
+        unreleasedMilestones = msR.rows;
+        if (unreleasedMilestones.length === 0) {
+          return res.status(400).json({
+            message:
+              "All milestones on this invoice have already been released.",
+          });
+        }
+        effectiveAmount = unreleasedMilestones.reduce(
+          (sum, m) => sum + Number(m.amount),
+          0,
+        );
+      } else {
+        // Prevent double-release on a flat invoice
+        const existingPayout = await db.query(
+          "SELECT id FROM payouts WHERE invoice_id = $1 AND status = 'paid'",
+          [invoice.id],
+        );
+        if (existingPayout.rows.length > 0) {
+          return res.status(409).json({
+            message:
+              "Funds for this invoice were already released in a prior payout. Double-release prevented.",
+          });
+        }
+      }
+
+      // 5. Fee calculation (2% platform, 0.5% referral if applicable)
+      const TOTAL_FEE_RATE = 0.02;
+      const REFERRAL_FEE_RATE = 0.005;
+      const referrerR = await db.query(
+        "SELECT referred_by FROM users WHERE id = $1",
+        [invoice.userid],
+      );
+      const referrerId = referrerR.rows[0]?.referred_by ?? null;
+      const hasReferral = referrerId !== null;
+      const totalFee = Math.floor(effectiveAmount * TOTAL_FEE_RATE);
+      const referralEarning = hasReferral
+        ? Math.floor(effectiveAmount * REFERRAL_FEE_RATE)
+        : 0;
+      const sellerShare = effectiveAmount - totalFee;
+
+      // 6. Disburse via CampAY
+      const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      });
+      await axios.post(
+        `${process.env.CAMPAY_BASE_URL}withdraw/`,
+        {
+          amount: sellerShare.toString(),
+          currency: "XAF",
+          to: seller.phone,
+          description: `Admin manual release — invoice ${invoicenumber}`,
+          external_reference: `admin-release-${invoicenumber}-${Date.now()}`,
+        },
+        { headers: { Authorization: `Token ${auth.data.token}` } },
+      );
+
+      // 7. Persist payout record
+      await db.query(
+        "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1,$2,$3,$4,$5,$6)",
+        [
+          invoice.userid,
+          sellerShare,
+          "Mobile Money",
+          "paid",
+          invoice.id,
+          invoicenumber,
+        ],
+      );
+
+      // 8. Mark milestones released (milestone invoices)
+      if (isMilestone && unreleasedMilestones.length > 0) {
+        await db.query(
+          `UPDATE invoice_milestones
+             SET status = 'released', released_at = NOW(), release_token = NULL, dispute_resolution = 'admin_release'
+           WHERE id = ANY($1::int[])`,
+          [unreleasedMilestones.map((m) => m.id)],
+        );
+      }
+
+      // 9. Close invoice
+      await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [
+        invoice.id,
+      ]);
+
+      // 10. Referral credit (best-effort)
+      if (hasReferral && referralEarning > 0) {
+        try {
+          const ins = await db.query(
+            `INSERT INTO referral_earnings
+               (referrer_userid, referred_userid, invoice_number, invoice_amount, earned_amount)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (invoice_number) DO NOTHING
+             RETURNING id`,
+            [
+              referrerId,
+              invoice.userid,
+              `${invoicenumber}-admin-release`,
+              effectiveAmount,
+              referralEarning,
+            ],
+          );
+          if (ins.rows.length > 0) {
+            await db.query(
+              "UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2",
+              [referralEarning, referrerId],
+            );
+          }
+        } catch (e) {
+          console.error("Admin release referral credit error:", e.message);
+        }
+      }
+
+      // 11. Push notification to seller (best-effort)
+      try {
+        const { notifyUser } = await import(
+          "../middleware/notificationHelper.js"
+        );
+        await notifyUser(
+          invoice.userid,
+          "funds_released",
+          "Funds Released to You",
+          `The admin has manually released ${sellerShare.toLocaleString()} XAF for invoice ${invoicenumber}.`,
+          { invoicenumber },
+        );
+      } catch {
+        /* non-fatal */
+      }
+
+      // 12. Emails (best-effort)
+      if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+        // Seller email
+        try {
+          await sgMail.send({
+            to: seller.email,
+            from: { email: process.env.VERIFIED_SENDER, name: BRAND.name },
+            subject: `Funds Released — Invoice ${invoicenumber} | ${BRAND.name}`,
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">Funds Released to You</h2>
+              <p style="color:#475569;">Hello ${escapeHtml(seller.name)}, the ${BRAND.name} admin team has manually released the escrowed funds for invoice <strong>${escapeHtml(invoicenumber)}</strong> to your account.</p>
+              ${emailTable([
+                ["Invoice", invoicenumber],
+                ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
+                ["Platform Fee (2%)", `-${totalFee.toLocaleString()} XAF`, "color:#dc2626;"],
+                ["Amount Sent to You", `${sellerShare.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                ["Sent To", seller.phone],
+                ["Admin Note", escapeHtml(note)],
+              ])}
+              <p style="color:#64748b;font-size:0.85rem;margin:16px 0 0;line-height:1.6;">
+                This action was taken by the ${BRAND.name} admin team because the buyer was unresponsive. The funds have been disbursed to your registered Mobile Money number.
+              </p>`,
+              { footerNote: `${BRAND.name} Escrow — admin-initiated fund release.` },
+            ),
+          });
+        } catch (e) {
+          console.error("Admin release seller email error:", e.message);
+        }
+
+        // Buyer email (best-effort — look up in guests table)
+        try {
+          const guestR = await db.query(
+            "SELECT * FROM guests WHERE invoicenumber = $1",
+            [invoicenumber],
+          );
+          if (guestR.rows.length > 0 && guestR.rows[0].email) {
+            await sgMail.send({
+              to: guestR.rows[0].email,
+              from: { email: process.env.VERIFIED_SENDER, name: BRAND.name },
+              subject: `Invoice Update — ${invoicenumber} | ${BRAND.name}`,
+              html: emailWrap(
+                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Escrow Funds Released</h2>
+                <p style="color:#475569;">The ${BRAND.name} admin team has reviewed invoice <strong>${escapeHtml(invoicenumber)}</strong> and released the escrowed funds to the seller.</p>
+                <p style="color:#475569;">This action was taken because no response or dispute was received within the review period.</p>
+                <p style="color:#475569;">If you believe this was done in error, please contact us at <a href="mailto:${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}" style="color:#F59E0B;">${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}</a>.</p>`,
+                { footerNote: `${BRAND.name} Escrow notification.` },
+              ),
+            });
+          }
+        } catch (e) {
+          console.error("Admin release buyer email error:", e.message);
+        }
+      }
+
+      // 13. Audit log
+      await auditLog(
+        "admin_manual_release",
+        invoice.userid,
+        `Invoice ${invoicenumber} — ${sellerShare.toLocaleString()} XAF released to seller. Note: ${note}`,
+      );
+
+      return res.status(200).json({
+        message: `Funds released. ${sellerShare.toLocaleString()} XAF sent to seller (${seller.phone}).`,
+        sellerReceives: sellerShare,
+        effectiveAmount,
+      });
+    } catch (err) {
+      console.error("Admin manual release error:", err);
+      if (err?.response?.data) {
+        console.error("CampAY error:", JSON.stringify(err.response.data));
+      }
+      return res
+        .status(500)
+        .json({ message: "Failed to release funds. Please try again." });
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/invoices/:invoicenumber/refund
+// Admin manually refunds escrowed funds to the buyer — no dispute required.
+// Used when resolving a stuck invoice in the buyer's favour (e.g. non-delivery).
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+  "/invoices/:invoicenumber/refund",
+  adminMiddleware,
+  async (req, res) => {
+    const { invoicenumber } = req.params;
+    const { admin_note } = req.body;
+
+    if (
+      !admin_note ||
+      typeof admin_note !== "string" ||
+      admin_note.trim().length < 5
+    ) {
+      return res
+        .status(400)
+        .json({ message: "An admin note (minimum 5 characters) is required." });
+    }
+    const note = admin_note.trim().slice(0, 1000);
+
+    try {
+      // 1. Fetch the invoice
+      const invR = await db.query(
+        "SELECT * FROM invoices WHERE invoicenumber = $1",
+        [invoicenumber],
+      );
+      if (invR.rows.length === 0)
+        return res.status(404).json({ message: "Invoice not found." });
+
+      const invoice = invR.rows[0];
+
+      if (!["paid", "delivered"].includes(invoice.status)) {
+        return res.status(400).json({
+          message: `Invoice is in '${invoice.status}' status. Only 'paid' or 'delivered' invoices can be refunded.`,
+        });
+      }
+
+      // 2. Block if an open dispute already exists — use the dispute flow instead
+      const disputeR = await db.query(
+        "SELECT id, status FROM disputes WHERE invoicenumber = $1 AND (status = 'open' OR status LIKE 'partially%')",
+        [invoicenumber],
+      );
+      if (disputeR.rows.length > 0) {
+        return res.status(409).json({
+          message:
+            "An open dispute exists for this invoice. Use the dispute resolution flow to refund the buyer.",
+        });
+      }
+
+      // 3. Prevent double-release
+      const existingPayout = await db.query(
+        "SELECT id FROM payouts WHERE invoice_id = $1 AND status = 'paid'",
+        [invoice.id],
+      );
+      if (existingPayout.rows.length > 0) {
+        return res.status(409).json({
+          message:
+            "Funds for this invoice were already released to the seller. Issuing a refund would cause a double-payment. Contact support to handle this case manually.",
+        });
+      }
+
+      // 4. Fetch buyer from guests table (buyer MoMo number is required)
+      const guestR = await db.query(
+        "SELECT * FROM guests WHERE invoicenumber = $1",
+        [invoicenumber],
+      );
+      if (guestR.rows.length === 0 || !guestR.rows[0].momo_number) {
+        return res.status(400).json({
+          message:
+            "Cannot process refund: no buyer MoMo number found for this invoice. Please process manually.",
+        });
+      }
+      const buyer = guestR.rows[0];
+
+      // 5. Determine effective amount (milestone-aware)
+      const isMilestone = invoice.payment_type === "installment";
+      let effectiveAmount = Number(invoice.amount);
+      let unreleasedMilestones = [];
+
+      if (isMilestone) {
+        const msR = await db.query(
+          "SELECT * FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released' ORDER BY milestone_number ASC",
+          [invoice.id],
+        );
+        unreleasedMilestones = msR.rows;
+        if (unreleasedMilestones.length === 0) {
+          return res.status(400).json({
+            message:
+              "All milestones on this invoice have already been released. No escrowed funds remain to refund.",
+          });
+        }
+        effectiveAmount = unreleasedMilestones.reduce(
+          (sum, m) => sum + Number(m.amount),
+          0,
+        );
+      }
+
+      // 6. Fee calculation (2% — borne by buyer on refund, consistent with dispute flow)
+      const TOTAL_FEE_RATE = 0.02;
+      const totalFee = Math.floor(effectiveAmount * TOTAL_FEE_RATE);
+      const refundAmount = effectiveAmount - totalFee;
+
+      // 7. Disburse via CampAY
+      const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      });
+      await axios.post(
+        `${process.env.CAMPAY_BASE_URL}withdraw/`,
+        {
+          amount: refundAmount.toString(),
+          currency: "XAF",
+          to: buyer.momo_number,
+          description: `Admin manual refund — invoice ${invoicenumber}`,
+          external_reference: `admin-refund-${invoicenumber}-${Date.now()}`,
+        },
+        { headers: { Authorization: `Token ${auth.data.token}` } },
+      );
+
+      // 8. Persist payout record (status: refunded)
+      await db.query(
+        "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1,$2,$3,$4,$5,$6)",
+        [
+          invoice.userid,
+          refundAmount,
+          "Refund to Buyer",
+          "refunded",
+          invoice.id,
+          invoicenumber,
+        ],
+      );
+
+      // 9. Mark milestones (milestone invoices)
+      if (isMilestone && unreleasedMilestones.length > 0) {
+        await db.query(
+          `UPDATE invoice_milestones
+             SET status = 'released', released_at = NOW(), release_token = NULL, dispute_resolution = 'admin_refund'
+           WHERE id = ANY($1::int[])`,
+          [unreleasedMilestones.map((m) => m.id)],
+        );
+      }
+
+      // 10. Close invoice as refunded
+      await db.query("UPDATE invoices SET status = 'refunded' WHERE id = $1", [
+        invoice.id,
+      ]);
+
+      // 11. Notify seller (best-effort)
+      const sellerR = await db.query("SELECT * FROM users WHERE id = $1", [
+        invoice.userid,
+      ]);
+      const seller = sellerR.rows[0] ?? null;
+
+      try {
+        const { notifyUser } = await import(
+          "../middleware/notificationHelper.js"
+        );
+        await notifyUser(
+          invoice.userid,
+          "refund_issued",
+          "Refund Issued to Buyer",
+          `The admin has reviewed invoice ${invoicenumber} and issued a refund to the buyer.`,
+          { invoicenumber },
+        );
+      } catch {
+        /* non-fatal */
+      }
+
+      // 12. Emails (best-effort)
+      if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+        // Buyer email
+        try {
+          await sgMail.send({
+            to: buyer.email,
+            from: { email: process.env.VERIFIED_SENDER, name: BRAND.name },
+            subject: `Refund Processed — Invoice ${invoicenumber} | ${BRAND.name}`,
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">Your Refund Has Been Processed</h2>
+              <p style="color:#475569;">The ${BRAND.name} admin team has reviewed invoice <strong>${escapeHtml(invoicenumber)}</strong> and processed a refund to your account.</p>
+              ${emailTable([
+                ["Invoice", invoicenumber],
+                ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
+                ["Platform Fee (2%)", `-${totalFee.toLocaleString()} XAF`, "color:#dc2626;"],
+                ["Refund Sent to You", `${refundAmount.toLocaleString()} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+                ["Sent To", buyer.momo_number],
+                ["Admin Note", escapeHtml(note)],
+              ])}`,
+              { footerNote: `${BRAND.name} Escrow — admin-initiated refund.` },
+            ),
+          });
+        } catch (e) {
+          console.error("Admin refund buyer email error:", e.message);
+        }
+
+        // Seller email
+        if (seller?.email) {
+          try {
+            await sgMail.send({
+              to: seller.email,
+              from: { email: process.env.VERIFIED_SENDER, name: BRAND.name },
+              subject: `Invoice Update — Refund Issued | ${invoicenumber} | ${BRAND.name}`,
+              html: emailWrap(
+                `<h2 style="color:#0F1F3D;margin:0 0 12px;">Refund Issued to Buyer</h2>
+                <p style="color:#475569;">Hello ${escapeHtml(seller.name)}, the ${BRAND.name} admin team has reviewed invoice <strong>${escapeHtml(invoicenumber)}</strong> and issued a refund to the buyer.</p>
+                <p style="color:#475569;font-size:0.88rem;line-height:1.6;">If you believe this decision was made in error, please contact us at <a href="mailto:${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}" style="color:#F59E0B;">${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}</a>.</p>`,
+                { footerNote: `${BRAND.name} Escrow — admin-initiated refund notification.` },
+              ),
+            });
+          } catch (e) {
+            console.error("Admin refund seller email error:", e.message);
+          }
+        }
+      }
+
+      // 13. Audit log
+      await auditLog(
+        "admin_manual_refund",
+        invoice.userid,
+        `Invoice ${invoicenumber} — ${refundAmount.toLocaleString()} XAF refunded to buyer (${buyer.momo_number}). Note: ${note}`,
+      );
+
+      return res.status(200).json({
+        message: `Refund processed. ${refundAmount.toLocaleString()} XAF sent to buyer (${buyer.momo_number}).`,
+        refundAmount,
+        effectiveAmount,
+      });
+    } catch (err) {
+      console.error("Admin manual refund error:", err);
+      if (err?.response?.data) {
+        console.error("CampAY error:", JSON.stringify(err.response.data));
+      }
+      return res
+        .status(500)
+        .json({ message: "Failed to process refund. Please try again." });
+    }
+  },
+);
 
 export default router;
