@@ -36,20 +36,37 @@ function maskEmail(email) {
 }
 
 async function sendVerificationEmail(user, otp) {
+  const frontendUrl = process.env.FRONTEND_URL || "https://fonlok.com";
+  const verifyLink = `${frontendUrl}/verify-email?email=${encodeURIComponent(user.email)}&code=${otp}`;
+
   const bodyHtml = `
     <h2 style="color:#0F1F3D;margin:0 0 8px;font-size:22px;">Verify your email address</h2>
     <p style="color:#475569;line-height:1.7;margin:0 0 20px;">
       Hi <strong>${user.name}</strong>, welcome to Fonlok! To complete your registration,
-      please enter the verification code below. This code expires in <strong>15 minutes</strong>.
+      either enter the 6-digit code below or click the button to verify instantly.
+      This code and link expire in <strong>15 minutes</strong>.
     </p>
+
     <div style="margin:24px 0;padding:22px 24px;border-radius:14px;background:linear-gradient(135deg,rgba(15,31,61,0.04),rgba(245,158,11,0.16));border:1px solid rgba(15,31,61,0.12);text-align:center;">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:12px;">Your verification code</div>
       <div style="font-size:36px;letter-spacing:0.28em;font-weight:800;color:#0F1F3D;font-family:monospace;">${otp}</div>
       <div style="margin-top:10px;font-size:12px;color:#64748b;">Expires in 15 minutes</div>
     </div>
-    <p style="color:#64748b;font-size:13px;line-height:1.6;margin:0;">
+
+    <p style="color:#475569;font-size:13px;text-align:center;margin:0 0 14px;">Or skip the code and verify with one click:</p>
+    <div style="text-align:center;margin:0 0 24px;">
+      <a href="${verifyLink}"
+         style="display:inline-block;padding:13px 32px;background:#F59E0B;color:#0F1F3D;font-weight:700;font-size:15px;border-radius:9px;text-decoration:none;letter-spacing:-0.01em;">
+        Verify my email address
+      </a>
+    </div>
+
+    <p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;">
+      If the button doesn't work, copy and paste this link into your browser:<br>
+      <a href="${verifyLink}" style="color:#64748b;word-break:break-all;">${verifyLink}</a>
+    </p>
+    <p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:12px 0 0;">
       If you did not create a Fonlok account, you can safely ignore this email.
-      Someone may have entered your email address by mistake.
     </p>
   `;
   await sgMail.send({
