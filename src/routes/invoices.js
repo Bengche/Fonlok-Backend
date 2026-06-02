@@ -831,12 +831,29 @@ router.get("/stats/:id", async (req, res) => {
       avgDealResult,
       topBuyerResult,
     ] = await Promise.all([
-      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1", [userId]),
-      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'paid'", [userId]),
-      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'pending'", [userId]),
-      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'delivered'", [userId]),
-      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status IN ('delivered','completed')", [userId]),
-      db.query("SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM payouts WHERE userid = $1 AND status = 'paid'", [userId]),
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1", [
+        userId,
+      ]),
+      db.query(
+        "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'paid'",
+        [userId],
+      ),
+      db.query(
+        "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'pending'",
+        [userId],
+      ),
+      db.query(
+        "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'delivered'",
+        [userId],
+      ),
+      db.query(
+        "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status IN ('delivered','completed')",
+        [userId],
+      ),
+      db.query(
+        "SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM payouts WHERE userid = $1 AND status = 'paid'",
+        [userId],
+      ),
       db.query(
         `SELECT COALESCE(SUM(invoices.amount), 0) AS total_spent
          FROM invoices
