@@ -819,47 +819,78 @@ router.get("/stats/:id", async (req, res) => {
   const userId = req.params.id;
 
   try {
-    // 1. Count all invoices grouped by status (for the seller view)
-    const allInvoices = await db.query(
-      "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1",
-      [userId],
-    );
-    const paidInvoices = await db.query(
-      "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'paid'",
-      [userId],
-    );
-    const pendingInvoices = await db.query(
-      "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'pending'",
-      [userId],
-    );
-    const deliveredInvoices = await db.query(
-      "SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'delivered'",
-      [userId],
-    );
+    const [
+      allInvoices,
+      paidInvoices,
+      pendingInvoices,
+      deliveredInvoices,
+      completedInvoices,
+      revenueResult,
+      spentResult,
+      last10Result,
+      avgDealResult,
+      topBuyerResult,
+    ] = await Promise.all([
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1", [userId]),
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'paid'", [userId]),
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'pending'", [userId]),
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status = 'delivered'", [userId]),
+      db.query("SELECT COUNT(*) AS total FROM invoices WHERE userid = $1 AND status IN ('delivered','completed')", [userId]),
+      db.query("SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM payouts WHERE userid = $1 AND status = 'paid'", [userId]),
+      db.query(
+        `SELECT COALESCE(SUM(invoices.amount), 0) AS total_spent
+         FROM invoices
+         JOIN guests ON guests.invoicenumber = invoices.invoicenumber
+         WHERE guests.registered_userid = $1`,
+        [userId],
+      ),
+      // Last 10 invoices to compute conversion rate
+      db.query(
+        `SELECT status FROM invoices WHERE userid = $1 ORDER BY createdat DESC LIMIT 10`,
+        [userId],
+      ),
+      // Average deal size (completed invoices)
+      db.query(
+        `SELECT ROUND(AVG(amount), 0) AS avg_amount
+         FROM invoices
+         WHERE userid = $1 AND status IN ('delivered','completed')`,
+        [userId],
+      ),
+      // Top buyer by total paid amount
+      db.query(
+        `SELECT g.email AS buyer_email, SUM(i.amount) AS total_paid
+         FROM invoices i
+         JOIN guests g ON g.invoicenumber = i.invoicenumber
+         WHERE i.userid = $1 AND i.status IN ('paid','delivered','completed')
+         GROUP BY g.email
+         ORDER BY total_paid DESC
+         LIMIT 1`,
+        [userId],
+      ),
+    ]);
 
-    // 2. Calculate total revenue made (sum of all amounts from the payouts table)
-    const revenueResult = await db.query(
-      "SELECT COALESCE(SUM(amount), 0) AS total_revenue FROM payouts WHERE userid = $1 AND status = 'paid'",
-      [userId],
-    );
-
-    // 3. Calculate total amount spent as a buyer
-    //    We look for invoices that were paid where the buyer's guest record is linked to this user's account
-    const spentResult = await db.query(
-      `SELECT COALESCE(SUM(invoices.amount), 0) AS total_spent
-       FROM invoices
-       JOIN guests ON guests.invoicenumber = invoices.invoicenumber
-       WHERE guests.registered_userid = $1`,
-      [userId],
-    );
+    const last10 = last10Result.rows;
+    const last10Paid = last10.filter((r) =>
+      ["paid", "delivered", "completed"].includes(r.status),
+    ).length;
+    const conversionRate =
+      last10.length > 0 ? Math.round((last10Paid / last10.length) * 100) : null;
 
     return res.status(200).json({
       totalInvoices: parseInt(allInvoices.rows[0].total),
       paidInvoices: parseInt(paidInvoices.rows[0].total),
       pendingInvoices: parseInt(pendingInvoices.rows[0].total),
       deliveredInvoices: parseInt(deliveredInvoices.rows[0].total),
+      completedInvoices: parseInt(completedInvoices.rows[0].total),
       totalRevenue: parseFloat(revenueResult.rows[0].total_revenue),
       totalSpent: parseFloat(spentResult.rows[0].total_spent),
+      conversionRate,
+      last10Total: last10.length,
+      last10Paid,
+      avgDealSize: avgDealResult.rows[0]?.avg_amount
+        ? parseFloat(avgDealResult.rows[0].avg_amount)
+        : null,
+      topBuyer: topBuyerResult.rows[0] || null,
     });
   } catch (error) {
     console.log(error.message);
@@ -1226,6 +1257,29 @@ router.post("/verify", async (req, res) => {
       verified: false,
       message: "Verification failed. Please try again later.",
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /invoice/platform-stats  — Public. Returns live social-proof counters
+// for the landing page: total completed deals and total XAF secured.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/platform-stats", async (_req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT
+         COUNT(*)                  AS deal_count,
+         COALESCE(SUM(amount), 0)  AS total_xaf
+       FROM invoices
+       WHERE status IN ('paid', 'delivered', 'completed')`,
+    );
+    return res.status(200).json({
+      dealCount: parseInt(result.rows[0].deal_count, 10),
+      totalXaf: parseFloat(result.rows[0].total_xaf),
+    });
+  } catch (err) {
+    console.error("platform-stats error:", err.message);
+    return res.status(500).json({ dealCount: 0, totalXaf: 0 });
   }
 });
 
