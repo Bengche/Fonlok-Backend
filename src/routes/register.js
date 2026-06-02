@@ -16,14 +16,14 @@ if (process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
 }
 
 // ── DB migration: email verification columns ────────────────────────────────
-db.query(`
+db.query(
+  `
   ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS email_verification_otp_hash TEXT,
     ADD COLUMN IF NOT EXISTS email_verification_otp_expires TIMESTAMPTZ
-`).catch((e) =>
-  console.error("⚠️  email_verified migration error:", e.message),
-);
+`,
+).catch((e) => console.error("⚠️  email_verified migration error:", e.message));
 
 function generateOtp() {
   return String(crypto.randomInt(100000, 1000000));
@@ -492,7 +492,10 @@ router.post(
       if (!isMatch) {
         return res
           .status(400)
-          .json({ code: "OTP_INVALID", message: "Incorrect verification code. Please try again." });
+          .json({
+            code: "OTP_INVALID",
+            message: "Incorrect verification code. Please try again.",
+          });
       }
 
       // Mark verified and clear OTP

@@ -478,8 +478,8 @@ async function runWeeklyDigest() {
       return;
     }
 
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
+    const weekStart = new Date(nowWAT);
+    weekStart.setDate(nowWAT.getDate() - 7);
     const weekStartIso = weekStart.toISOString().slice(0, 10);
 
     const usersResult = await db.query(
