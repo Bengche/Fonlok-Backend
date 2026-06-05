@@ -42,6 +42,12 @@ db.query(
   console.error("⚠️  seller_logo_url migration error:", e.message),
 );
 
+db.query(
+  "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS seller_brand_name TEXT",
+).catch((e) =>
+  console.error("⚠️  seller_brand_name migration error:", e.message),
+);
+
 // ── Ensure guests.registered_userid column exists ─────────────────────────────
 db.query(
   "ALTER TABLE guests ADD COLUMN IF NOT EXISTS registered_userid INTEGER REFERENCES users(id)",
@@ -138,6 +144,13 @@ router.post(
       .isIn(["full", "installment"])
       .withMessage("Payment type must be 'full' or 'installment'."),
 
+    body("seller_brand_name")
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ max: 80 })
+      .withMessage("Brand name must be 80 characters or fewer.")
+      .escape(),
+
     // Validate milestone labels and amounts if present
     body("milestones.*.label")
       .optional()
@@ -162,9 +175,10 @@ router.post(
       amount,
       description,
       expires_at,
-      // Installment fields &mdash; optional
+      seller_brand_name,
+      // Installment fields — optional
       payment_type, // "full" | "installment"
-      milestones, // array of { label, amount, deadline? } &mdash; only for installment
+      milestones, // array of { label, amount, deadline? } — only for installment
     } = req.body;
 
     const parsedMilestones =
@@ -257,7 +271,7 @@ router.post(
         await client.query("BEGIN");
 
         const invoiceResult = await client.query(
-          "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type, seller_logo_url) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
+          "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type, seller_logo_url, seller_brand_name) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *",
           [
             invoicename,
             email,
@@ -270,6 +284,7 @@ router.post(
             expires_at || null,
             isInstallment ? "installment" : "full",
             sellerLogoUrl,
+            seller_brand_name || null,
           ],
         );
 
