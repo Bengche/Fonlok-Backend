@@ -488,7 +488,7 @@ router.get("/poll/:invoice_number", async (req, res) => {
 
     // Get a fresh Campay token
     const authResponse = await axios.post(
-      "https://demo.campay.net/api/token/",
+      `${process.env.CAMPAY_BASE_URL}token/`,
       {
         username: process.env.CAMPAY_USERNAME,
         password: process.env.CAMPAY_PASSWORD,
@@ -497,7 +497,8 @@ router.get("/poll/:invoice_number", async (req, res) => {
     const campayToken = authResponse.data.token;
 
     const txResponse = await axios.get(
-      `https://demo.campay.net/api/transaction/${campayRef}/`,
+      `${process.env.CAMPAY_BASE_URL}transaction/${campayRef}/`,
+
       { headers: { Authorization: `Token ${campayToken}` } },
     );
     const campayStatus = txResponse.data.status;
