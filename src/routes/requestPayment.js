@@ -93,7 +93,7 @@ router.post(
       // 1. Get an Authorization Token from Campay
       // Note: In production, use environment variables!
       const authResponse = await axios.post(
-        "https://demo.campay.net/api/token/",
+        `${process.env.CAMPAY_BASE_URL}token/`,
         {
           username: process.env.CAMPAY_USERNAME,
           password: process.env.CAMPAY_PASSWORD,
@@ -129,7 +129,7 @@ router.post(
 
       // 2. Request Payment (Collect)
       const collectResponse = await axios.post(
-        "https://demo.campay.net/api/collect/",
+        `${process.env.CAMPAY_BASE_URL}collect/`,
         {
           amount: amount, //only whole intergers, no float numbers
           currency: "XAF",
