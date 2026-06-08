@@ -90,17 +90,8 @@ router.post(
     // $1 and $2 are safe placeholders for variables
 
     try {
-      // 1. Get an Authorization Token from Campay
-      // Note: In production, use environment variables!
-      const authResponse = await axios.post(
-        `${process.env.CAMPAY_BASE_URL}token/`,
-        {
-          username: process.env.CAMPAY_USERNAME,
-          password: process.env.CAMPAY_PASSWORD,
-        },
-      );
-
-      const token = authResponse.data.token;
+      // 1. Use the permanent Campay access token
+      const token = process.env.CAMPAY_TOKEN;
       let paymentUUID = crypto.randomUUID();
       // MUST be awaited — Campay fires its webhook almost immediately after
       // collect() returns.  If this INSERT hasn't committed yet the webhook

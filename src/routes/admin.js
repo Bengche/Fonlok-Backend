@@ -2260,10 +2260,6 @@ router.post(
       const sellerShare = effectiveAmount - totalFee;
 
       // 6. Disburse via CampAY
-      const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-        username: process.env.CAMPAY_USERNAME,
-        password: process.env.CAMPAY_PASSWORD,
-      });
       await axios.post(
         `${process.env.CAMPAY_BASE_URL}withdraw/`,
         {
@@ -2273,7 +2269,7 @@ router.post(
           description: `Admin manual release — invoice ${invoicenumber}`,
           external_reference: `admin-release-${invoicenumber}-${Date.now()}`,
         },
-        { headers: { Authorization: `Token ${auth.data.token}` } },
+        { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
       );
 
       // 7. Persist payout record
@@ -2541,10 +2537,6 @@ router.post(
       const refundAmount = effectiveAmount - totalFee;
 
       // 7. Disburse via CampAY
-      const auth = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-        username: process.env.CAMPAY_USERNAME,
-        password: process.env.CAMPAY_PASSWORD,
-      });
       await axios.post(
         `${process.env.CAMPAY_BASE_URL}withdraw/`,
         {
@@ -2554,7 +2546,7 @@ router.post(
           description: `Admin manual refund — invoice ${invoicenumber}`,
           external_reference: `admin-refund-${invoicenumber}-${Date.now()}`,
         },
-        { headers: { Authorization: `Token ${auth.data.token}` } },
+        { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
       );
 
       // 8. Persist payout record (status: refunded)
