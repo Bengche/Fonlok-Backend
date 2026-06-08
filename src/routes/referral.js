@@ -272,6 +272,10 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
 
     // 6. Call Campay to transfer the money
     try {
+      const campayAuthRef = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      });
       await axios.post(
         `${process.env.CAMPAY_BASE_URL}withdraw/`,
         {
@@ -281,7 +285,7 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
           description: "Referral earnings withdrawal",
           external_reference: `ref-withdrawal-${withdrawalId}`,
         },
-        { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+        { headers: { Authorization: `Token ${campayAuthRef.data.token}` } },
       );
 
       // 7. Mark withdrawal as paid

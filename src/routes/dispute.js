@@ -868,6 +868,10 @@ router.post(
             `fee=${totalFeeD}, fonlokNet=${fonlokNetD}, referralEarning=${referralEarningD}, sellerReceives=${sellerShare}`,
         );
 
+        const campayAuthS = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+          username: process.env.CAMPAY_USERNAME,
+          password: process.env.CAMPAY_PASSWORD,
+        });
         await axios.post(
           `${process.env.CAMPAY_BASE_URL}withdraw/`,
           {
@@ -877,7 +881,7 @@ router.post(
             description: `Dispute resolved (seller)  -  invoice ${invoice.invoicenumber}`,
             external_reference: `dispute-seller-${invoice.invoicenumber}-${Date.now()}`,
           },
-          { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+          { headers: { Authorization: `Token ${campayAuthS.data.token}` } },
         );
 
         if (isMilestoneInvoiceR && eligibleMilestones.length > 0) {
@@ -1048,6 +1052,10 @@ router.post(
           `Dispute refund (buyer) ${invoice.invoicenumber}: gross=${effectiveAmount}, fee=${totalFeeD}, refundAmount=${refundAmount}`,
         );
 
+        const campayAuthB = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+          username: process.env.CAMPAY_USERNAME,
+          password: process.env.CAMPAY_PASSWORD,
+        });
         await axios.post(
           `${process.env.CAMPAY_BASE_URL}withdraw/`,
           {
@@ -1057,7 +1065,7 @@ router.post(
             description: `Dispute refund  -  invoice ${invoice.invoicenumber}`,
             external_reference: `dispute-refund-${invoice.invoicenumber}-${Date.now()}`,
           },
-          { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+          { headers: { Authorization: `Token ${campayAuthB.data.token}` } },
         );
 
         if (isMilestoneInvoiceR && eligibleMilestones.length > 0) {

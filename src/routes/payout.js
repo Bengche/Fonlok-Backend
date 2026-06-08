@@ -176,6 +176,10 @@ const executePayout = async (invoiceId) => {
   );
 
   // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const campayAuthLegacy1 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+    username: process.env.CAMPAY_USERNAME,
+    password: process.env.CAMPAY_PASSWORD,
+  });
   await axios.post(
     `${process.env.CAMPAY_BASE_URL}withdraw/`,
     {
@@ -185,7 +189,7 @@ const executePayout = async (invoiceId) => {
       description: `Fonlok payout for invoice ${invoiceRow.invoicenumber}`,
       external_reference: invoiceRow.invoicenumber,
     },
-    { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+    { headers: { Authorization: `Token ${campayAuthLegacy1.data.token}` } },
   );
 
   // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -443,6 +447,10 @@ const executePayoutLink = async (invoiceId) => {
   );
 
   // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const campayAuthLegacy2 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+    username: process.env.CAMPAY_USERNAME,
+    password: process.env.CAMPAY_PASSWORD,
+  });
   await axios.post(
     `${process.env.CAMPAY_BASE_URL}withdraw/`,
     {
@@ -452,7 +460,7 @@ const executePayoutLink = async (invoiceId) => {
       description: `Fonlok payout for invoice ${invoiceRow.invoicenumber}`,
       external_reference: invoiceRow.invoicenumber,
     },
-    { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+    { headers: { Authorization: `Token ${campayAuthLegacy2.data.token}` } },
   );
 
   // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -998,6 +1006,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
     const fonlokFee = msTotalFee;
 
     // 7. Campay transfer
+    const campayAuth3 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    });
     await axios.post(
       `${process.env.CAMPAY_BASE_URL}withdraw/`,
       {
@@ -1007,7 +1019,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         description: `Fonlok milestone payout: ${milestone.label} (Invoice ${invoice.invoicenumber})`,
         external_reference: `milestone-${milestone.id}`,
       },
-      { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+      { headers: { Authorization: `Token ${campayAuth3.data.token}` } },
     );
 
     // 8. Record payout
@@ -1317,6 +1329,10 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
     const fonlokFee = totalFee;
 
     // 9. Campay transfer
+    const campayAuth4 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    });
     await axios.post(
       `${process.env.CAMPAY_BASE_URL}withdraw/`,
       {
@@ -1326,7 +1342,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
         description: `Fonlok milestone payout: ${milestone.label} (Invoice ${invoice.invoicenumber})`,
         external_reference: `milestone-${milestone.id}`,
       },
-      { headers: { Authorization: `Token ${process.env.CAMPAY_TOKEN}` } },
+      { headers: { Authorization: `Token ${campayAuth4.data.token}` } },
     );
 
     // 10. Record payout
