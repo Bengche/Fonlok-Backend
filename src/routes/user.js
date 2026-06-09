@@ -32,6 +32,14 @@ import {
 } from "../utils/sessionSecurity.js";
 import sgMail from "@sendgrid/mail";
 import { emailWrap, emailTable } from "../utils/emailTemplate.js";
+import { BRAND } from "../config/brand.js";
+
+const escapeHtml = (v) =>
+  String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 import dotenv from "dotenv";
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -454,15 +462,16 @@ router.delete(
     const userId = req.user.id;
     const { password } = req.body;
     try {
-      // 1. Verify password
+      // 1. Verify password and fetch profile in one query
       const userResult = await db.query(
-        "SELECT password FROM users WHERE id = $1",
+        "SELECT password, name, email, username FROM users WHERE id = $1",
         [userId],
       );
       if (userResult.rows.length === 0)
         return res.status(404).json({ message: "User not found." });
 
-      const match = await bcrypt.compare(password, userResult.rows[0].password);
+      const { password: hashedPw, name, email, username } = userResult.rows[0];
+      const match = await bcrypt.compare(password, hashedPw);
       if (!match)
         return res
           .status(401)
@@ -496,6 +505,73 @@ router.delete(
 
       // 4. Clear the auth cookie
       clearAuthCookie(res);
+
+      // 5. Send goodbye confirmation email (non-fatal)
+      if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+        const supportEmail = escapeHtml(
+          process.env.VERIFIED_SENDER || BRAND.supportEmail,
+        );
+        const deletionDate = new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        });
+        try {
+          await sgMail.send({
+            to: email,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: "Your Fonlok account has been deleted",
+            html: emailWrap(
+              `
+              <!-- Confirmation banner -->
+              <div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px;padding:14px 18px;margin-bottom:22px;">
+                <p style="margin:0;font-weight:700;color:#15803d;font-size:15px;">Account Successfully Deleted</p>
+                <p style="margin:4px 0 0;color:#166534;font-size:13px;line-height:1.5;">Your data has been permanently removed from Fonlok.</p>
+              </div>
+
+              <p style="color:#1e293b;font-size:15px;line-height:1.7;margin:0 0 16px;">
+                Hi <strong>${escapeHtml(name || username || "there")}</strong>,
+              </p>
+              <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">
+                As requested, your Fonlok account has been permanently deleted. We are sorry to see you go, and we appreciate the time you spent with us.
+              </p>
+
+              ${emailTable([
+                ["Account", `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`],
+                ["Deletion Date", deletionDate],
+                ["Requested by", "Account holder (self-requested)"],
+                ["Status", '<span style="color:#16a34a;font-weight:700;">Completed</span>', ""],
+              ])}
+
+              <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:20px 0 8px;">
+                Here is what has been removed:
+              </p>
+              <ul style="color:#64748b;font-size:13.5px;line-height:1.9;margin:0 0 20px;padding-left:20px;">
+                <li>Your personal information, profile, and settings.</li>
+                <li>All invoices, transactions, and chat history.</li>
+                <li>Any referral earnings that were not yet withdrawn.</li>
+              </ul>
+
+              <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:0 0 6px;">
+                Deleted in error, or changed your mind? We cannot recover a deleted account, but our team is happy to help:
+              </p>
+              <a href="mailto:${supportEmail}"
+                 style="display:inline-block;background:#0F1F3D;color:#F59E0B;padding:11px 24px;text-decoration:none;border-radius:7px;font-weight:700;font-size:14px;margin:8px 0 20px;">
+                Contact Support →
+              </a>
+              `,
+              {
+                subtitle: "Account Update",
+                footerNote:
+                  "You requested this deletion from within your Fonlok account settings. This action is permanent and cannot be undone.",
+              },
+            ),
+          });
+        } catch (mailErr) {
+          console.warn("Self-delete confirmation email failed:", mailErr.message);
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         message: "Your account has been permanently deleted.",

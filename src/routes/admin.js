@@ -1796,41 +1796,63 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
 
     // Email notification
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
+      const supportEmail = escapeHtml(
+        process.env.VERIFIED_SENDER || BRAND.supportEmail,
+      );
+      const deletionDate = new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
       try {
         await sgMail.send({
           to: email,
           from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
-          subject: "Your Fonlok account has been deleted",
+          subject: "Your Fonlok account has been permanently deleted",
           html: emailWrap(
             `
-            <h2 style="margin:0 0 6px;color:#0f172a;font-size:20px;font-weight:800;">Account Permanently Deleted</h2>
-            <p style="color:#475569;margin:0 0 18px;line-height:1.6;">
-              Hi ${escapeHtml(name || username || "there")}, we are writing to inform you that your Fonlok account has been permanently deleted by our moderation team.
+            <!-- Red alert banner -->
+            <div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:6px;padding:14px 18px;margin-bottom:22px;">
+              <p style="margin:0;font-weight:700;color:#991b1b;font-size:15px;">Account Permanently Deleted</p>
+              <p style="margin:4px 0 0;color:#b91c1c;font-size:13px;line-height:1.5;">This action has been carried out by the Fonlok moderation team.</p>
+            </div>
+
+            <p style="color:#1e293b;font-size:15px;line-height:1.7;margin:0 0 16px;">
+              Hi <strong>${escapeHtml(name || username || "there")}</strong>,
             </p>
+            <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 20px;">
+              We are writing to inform you that your Fonlok account has been permanently deleted by our moderation team, following a review of your account activity in accordance with our Terms of Service.
+            </p>
+
             ${emailTable([
-              [
-                "Account",
-                `@${escapeHtml(username || "")} / ${escapeHtml(email)}`,
-              ],
-              [
-                "Date",
-                new Date().toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                }),
-              ],
-              ["Status", "Permanently Deleted"],
+              ["Account", `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`],
+              ["Deletion Date", deletionDate],
+              ["Action taken by", "Fonlok Moderation Team"],
+              ["Status", '<span style="color:#dc2626;font-weight:700;">Permanently Deleted</span>', ""],
             ])}
-            <p style="color:#64748b;font-size:0.9rem;line-height:1.6;margin:16px 0 0;">
-              All your data, invoices, and transaction history have been removed. The email address and phone number associated with this account may not be used to create a new Fonlok account.
+
+            <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:20px 0 8px;">
+              As a result of this action:
             </p>
-            <p style="color:#64748b;font-size:0.9rem;line-height:1.6;margin:8px 0 0;">
-              If you believe this was done in error, please contact us at
-              <a href="mailto:${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}" style="color:#0F1F3D;">${escapeHtml(process.env.VERIFIED_SENDER || BRAND.supportEmail)}</a>.
+            <ul style="color:#64748b;font-size:13.5px;line-height:1.9;margin:0 0 20px;padding-left:20px;">
+              <li>All your personal data, invoices, and transaction history have been removed.</li>
+              <li>The email address and phone number linked to this account cannot be used to create a new Fonlok account.</li>
+              <li>Any funds held in active escrow at the time of deletion have been handled in accordance with our dispute resolution policy.</li>
+            </ul>
+
+            <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:0 0 6px;">
+              If you believe this was carried out in error, or you would like to appeal this decision, please contact our support team:
             </p>
+            <a href="mailto:${supportEmail}"
+               style="display:inline-block;background:#0F1F3D;color:#F59E0B;padding:11px 24px;text-decoration:none;border-radius:7px;font-weight:700;font-size:14px;margin:8px 0 20px;">
+              Contact Support →
+            </a>
             `,
-            { subtitle: "Account Update" },
+            {
+              subtitle: "Account Notice",
+              footerNote:
+                "This is an automated notice from the Fonlok moderation team. Please do not reply to this email — use the contact link above to reach support.",
+            },
           ),
         });
       } catch (e) {
