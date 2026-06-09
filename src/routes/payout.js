@@ -1230,43 +1230,49 @@ router.post("/release-milestone/:token", async (req, res) => {
       console.error("❌ Seller milestone receipt email error (email link):", emailErr.message);
     }
 
-    // 12. Return success HTML page to the buyer
-    const reviewHref = `${process.env.FRONTEND_URL}/review/${seller.username}/${milestone.invoicenumber}`;
-    return res.send(
-      renderPage({
-        type: "success",
-        title: "Payment Released",
-        body: `You have successfully released the payment for <strong>${milestone.label}</strong>. The seller has been notified and <strong>${sellerReceives.toLocaleString()} XAF</strong> is on its way to their account.`,
-        ctaHref: reviewHref,
-        ctaLabel: "Leave a Review for This Seller",
-        note: "Thank you for using Fonlok. You may close this page.",
-      }),
-    );
-  } catch (error) {
-    console.error("Milestone email-link release failed:", error.message);
-    return res.status(500).send(
-      renderPage({
-        type: "error",
-        title: "Something Went Wrong",
-        body: "An unexpected error occurred while processing this payment release. No money has been moved.",
-        note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
-      }),
-    );
-  }
-});
-            footerNote:
-              "Thank you for using Fonlok. This email confirms your milestone payout has been processed.",
-          },
-        ),
-      });
-    } catch (emailErr) {
-      console.error(
-        "❌ Seller milestone receipt email error (email link):",
-        emailErr.message,
+    // 12. Buyer release confirmation email with review link (non-fatal)
+    try {
+      const buyerResult = await db.query(
+        "SELECT email, user_id FROM guests WHERE invoicenumber = $1 LIMIT 1",
+        [milestone.invoicenumber],
       );
+      if (buyerResult.rows.length > 0) {
+        const buyer = buyerResult.rows[0];
+        const buyerLang = buyer.user_id
+          ? await getUserEmailLanguageById(buyer.user_id)
+          : "en";
+        const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
+        const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${milestone.invoicenumber}`;
+        const feeLabel = hasReferral ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
+        await sgMail.send({
+          to: buyer.email,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+          subject: releasedCopy.subject(milestone.invoicenumber),
+          html: emailWrap(
+            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+            <p style="color:#475569;">${releasedCopy.body(seller.name, milestone.invoicename)}</p>
+            ${emailTable([
+              [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", milestone.invoicenumber],
+              [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
+              [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
+              [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+              [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            ])}
+            <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+              <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
+              <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
+              ${emailButton(reviewLink, releasedCopy.reviewButton)}
+            </div>`,
+            { footerNote: releasedCopy.footerNote },
+          ),
+        });
+        console.log(`✅ Buyer milestone release confirmation email sent to ${buyer.email}`);
+      }
+    } catch (buyerEmailErr) {
+      console.error("⚠️ Buyer milestone release email error (email link):", buyerEmailErr.message);
     }
 
-    // 12. Return success HTML page to the buyer
+    // 13. Return success HTML page to the buyer
     const reviewHref = `${process.env.FRONTEND_URL}/review/${seller.username}/${milestone.invoicenumber}`;
     return res.send(
       renderPage({
