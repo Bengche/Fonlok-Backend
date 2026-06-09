@@ -1895,9 +1895,9 @@ router.get("/analytics", adminMiddleware, async (req, res) => {
   try {
     const [revenue, users, payments] = await Promise.all([
       db.query(`
-        SELECT DATE(created_at) AS day, COALESCE(SUM(amount),0)::float AS total
-        FROM transactions
-        WHERE status = 'completed' AND created_at >= NOW() - INTERVAL '30 days'
+        SELECT DATE(createdat) AS day, COALESCE(SUM(amount),0)::float AS total
+        FROM payouts
+        WHERE status = 'paid' AND createdat >= NOW() - INTERVAL '30 days'
         GROUP BY day ORDER BY day ASC
       `),
       db.query(`
@@ -1907,9 +1907,9 @@ router.get("/analytics", adminMiddleware, async (req, res) => {
         GROUP BY day ORDER BY day ASC
       `),
       db.query(`
-        SELECT DATE(created_at) AS day, COUNT(*)::int AS count
-        FROM transactions
-        WHERE created_at >= NOW() - INTERVAL '30 days'
+        SELECT DATE(createdat) AS day, COUNT(*)::int AS count
+        FROM payments
+        WHERE createdat >= NOW() - INTERVAL '30 days'
         GROUP BY day ORDER BY day ASC
       `),
     ]);
@@ -2260,10 +2260,13 @@ router.post(
       const sellerShare = effectiveAmount - totalFee;
 
       // 6. Disburse via CampAY
-      const campayAuthRelease = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-        username: process.env.CAMPAY_USERNAME,
-        password: process.env.CAMPAY_PASSWORD,
-      });
+      const campayAuthRelease = await axios.post(
+        `${process.env.CAMPAY_BASE_URL}token/`,
+        {
+          username: process.env.CAMPAY_USERNAME,
+          password: process.env.CAMPAY_PASSWORD,
+        },
+      );
       await axios.post(
         `${process.env.CAMPAY_BASE_URL}withdraw/`,
         {
@@ -2541,10 +2544,13 @@ router.post(
       const refundAmount = effectiveAmount - totalFee;
 
       // 7. Disburse via CampAY
-      const campayAuthRefund = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-        username: process.env.CAMPAY_USERNAME,
-        password: process.env.CAMPAY_PASSWORD,
-      });
+      const campayAuthRefund = await axios.post(
+        `${process.env.CAMPAY_BASE_URL}token/`,
+        {
+          username: process.env.CAMPAY_USERNAME,
+          password: process.env.CAMPAY_PASSWORD,
+        },
+      );
       await axios.post(
         `${process.env.CAMPAY_BASE_URL}withdraw/`,
         {
