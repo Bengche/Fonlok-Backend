@@ -280,9 +280,11 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       // Resolved disputes
       db.query("SELECT COUNT(*) FROM disputes WHERE status LIKE 'resolved%'"),
 
-      // Platform revenue = 2% of all paid invoice amounts
+      // Platform revenue = fees actually collected from completed payouts.
+      // payout.amount = gross * 0.98, so fee = payout.amount * (0.02 / 0.98).
+      // Referral commissions (0.5%) are subtracted separately below.
       db.query(
-        "SELECT COALESCE(SUM(amount * 0.02), 0) AS revenue FROM invoices WHERE status = 'paid'",
+        "SELECT COALESCE(SUM(amount * 0.02 / 0.98), 0) AS gross_fee FROM payouts WHERE status = 'paid'",
       ),
 
       // Total referral commissions ever earned by referrers
@@ -322,8 +324,11 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       openDisputes: parseInt(openDisputesResult.rows[0].count),
       resolvedDisputes: parseInt(resolvedDisputesResult.rows[0].count),
 
-      // Platform revenue = 2% of paid invoices, minus 0.5% paid out as referral fees
-      platformRevenue: parseFloat(revenueResult.rows[0].revenue),
+      // Platform revenue = fees collected from released payouts minus referral commissions paid
+      platformRevenue: Math.round(
+        parseFloat(revenueResult.rows[0].gross_fee) -
+          parseFloat(referralEarningsResult.rows[0].total),
+      ),
       totalReferralCommissionsPaid: parseFloat(
         referralEarningsResult.rows[0].total,
       ),
@@ -1779,7 +1784,9 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
         "DELETE FROM reviews WHERE reviewer_userid = $1 OR seller_userid = $1",
         [userId],
       );
-      await db.query("DELETE FROM push_subscriptions WHERE userid = $1", [userId]);
+      await db.query("DELETE FROM push_subscriptions WHERE userid = $1", [
+        userId,
+      ]);
       await db.query("DELETE FROM user_sessions WHERE user_id = $1", [userId]);
       await db.query("DELETE FROM users WHERE id = $1", [userId]);
     } catch (deleteErr) {
