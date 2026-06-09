@@ -1760,35 +1760,31 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
         .json({ message: "You cannot delete your own admin account." });
     }
 
-    const result = await db.query(
-      `UPDATE users
-       SET deleted_at = NOW(),
-           is_suspended = FALSE,
-           suspended_until = NULL,
-           suspension_reason = NULL,
-           suspended_at = NULL,
-           appeal_text = NULL,
-           appeal_status = 'none',
-           appeal_at = NULL,
-           appeal_admin_note = NULL
-       WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id, name, email, username`,
+    // Fetch user info before deleting (needed for email notification)
+    const existing = await db.query(
+      "SELECT id, name, email, username FROM users WHERE id = $1",
       [userId],
     );
-
-    if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "User not found or already deleted." });
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
     }
+    const { name, email, username } = existing.rows[0];
 
-    const { name, email, username } = result.rows[0];
-
-    // Revoke all active sessions for this user
+    // Hard-delete the user and all their data
+    // (notifications, reviews, push_subscriptions cleaned up first;
+    //  invoices, guests, payments etc. rely on ON DELETE CASCADE)
     try {
+      await db.query("DELETE FROM notifications WHERE userid = $1", [userId]);
+      await db.query(
+        "DELETE FROM reviews WHERE reviewer_userid = $1 OR seller_userid = $1",
+        [userId],
+      );
+      await db.query("DELETE FROM push_subscriptions WHERE userid = $1", [userId]);
       await db.query("DELETE FROM user_sessions WHERE user_id = $1", [userId]);
-    } catch {
-      /* non-fatal */
+      await db.query("DELETE FROM users WHERE id = $1", [userId]);
+    } catch (deleteErr) {
+      console.error("Admin hard-delete error:", deleteErr.message);
+      return res.status(500).json({ message: "Failed to delete account." });
     }
 
     // Push notification (best-effort, may fail if FCM token gone)
@@ -1901,9 +1897,9 @@ router.get("/analytics", adminMiddleware, async (req, res) => {
         GROUP BY day ORDER BY day ASC
       `),
       db.query(`
-        SELECT DATE(created_at) AS day, COUNT(*)::int AS count
+        SELECT DATE(createdat) AS day, COUNT(*)::int AS count
         FROM users
-        WHERE created_at >= NOW() - INTERVAL '30 days'
+        WHERE createdat >= NOW() - INTERVAL '30 days'
         GROUP BY day ORDER BY day ASC
       `),
       db.query(`
