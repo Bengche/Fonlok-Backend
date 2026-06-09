@@ -1794,21 +1794,6 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
       return res.status(500).json({ message: "Failed to delete account." });
     }
 
-    // Push notification (best-effort, may fail if FCM token gone)
-    try {
-      const { notifyUser } =
-        await import("../middleware/notificationHelper.js");
-      await notifyUser(
-        userId,
-        "account_deleted",
-        "Account Deleted",
-        "Your Fonlok account has been permanently deleted by our team.",
-        {},
-      );
-    } catch {
-      /* non-fatal */
-    }
-
     // Email notification
     if (email && process.env.SENDGRID_API_KEY?.startsWith("SG.")) {
       try {
@@ -1853,7 +1838,7 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
       }
     }
 
-    await auditLog("user_deleted", id, email || username || null);
+    await auditLog("user_deleted", userId, email || username || null);
     return res.json({
       ok: true,
       message: `Account for @${username || email} has been permanently deleted.`,
