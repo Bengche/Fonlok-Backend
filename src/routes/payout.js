@@ -176,10 +176,13 @@ const executePayout = async (invoiceId) => {
   );
 
   // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const campayAuthLegacy1 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-    username: process.env.CAMPAY_USERNAME,
-    password: process.env.CAMPAY_PASSWORD,
-  });
+  const campayAuthLegacy1 = await axios.post(
+    `${process.env.CAMPAY_BASE_URL}token/`,
+    {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    },
+  );
   await axios.post(
     `${process.env.CAMPAY_BASE_URL}withdraw/`,
     {
@@ -298,7 +301,9 @@ const executePayout = async (invoiceId) => {
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
         [
-          sellerLanguage === "fr" ? "Num&eacute;ro de facture" : "Invoice Number",
+          sellerLanguage === "fr"
+            ? "Num&eacute;ro de facture"
+            : "Invoice Number",
           invoiceRow.invoicenumber,
         ],
         [
@@ -359,11 +364,21 @@ const executePayout = async (invoiceId) => {
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
-            [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoiceRow.invoicenumber],
-            [buyerLang === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+            [
+              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+              invoiceRow.invoicenumber,
+            ],
+            [
+              buyerLang === "fr" ? "Nom de la facture" : "Invoice Name",
+              invoiceRow.invoicename,
+            ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
             [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
-            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            [
+              releasedCopy.sellerReceived,
+              `${sellerReceives} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
           ])}
           <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
             <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
@@ -373,10 +388,15 @@ const executePayout = async (invoiceId) => {
           { footerNote: releasedCopy.footerNote },
         ),
       });
-      console.log(`\u2705 Buyer release confirmation email sent to ${buyer.email}`);
+      console.log(
+        `\u2705 Buyer release confirmation email sent to ${buyer.email}`,
+      );
     }
   } catch (buyerEmailErr) {
-    console.error("\u26a0\ufe0f Buyer release email error (payout succeeded):", buyerEmailErr.message);
+    console.error(
+      "\u26a0\ufe0f Buyer release email error (payout succeeded):",
+      buyerEmailErr.message,
+    );
   }
 
   return true;
@@ -447,10 +467,13 @@ const executePayoutLink = async (invoiceId) => {
   );
 
   // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const campayAuthLegacy2 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-    username: process.env.CAMPAY_USERNAME,
-    password: process.env.CAMPAY_PASSWORD,
-  });
+  const campayAuthLegacy2 = await axios.post(
+    `${process.env.CAMPAY_BASE_URL}token/`,
+    {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    },
+  );
   await axios.post(
     `${process.env.CAMPAY_BASE_URL}withdraw/`,
     {
@@ -562,7 +585,9 @@ const executePayoutLink = async (invoiceId) => {
       <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
       ${emailTable([
         [
-          sellerLanguage === "fr" ? "Num&eacute;ro de facture" : "Invoice Number",
+          sellerLanguage === "fr"
+            ? "Num&eacute;ro de facture"
+            : "Invoice Number",
           invoiceRow.invoicenumber,
         ],
         [
@@ -623,11 +648,21 @@ const executePayoutLink = async (invoiceId) => {
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
-            [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoiceRow.invoicenumber],
-            [buyerLang === "fr" ? "Nom de la facture" : "Invoice Name", invoiceRow.invoicename],
+            [
+              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+              invoiceRow.invoicenumber,
+            ],
+            [
+              buyerLang === "fr" ? "Nom de la facture" : "Invoice Name",
+              invoiceRow.invoicename,
+            ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
             [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
-            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            [
+              releasedCopy.sellerReceived,
+              `${sellerReceives} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
           ])}
           <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
             <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
@@ -637,10 +672,15 @@ const executePayoutLink = async (invoiceId) => {
           { footerNote: releasedCopy.footerNote },
         ),
       });
-      console.log(`\u2705 Buyer release confirmation email sent to ${buyer.email}`);
+      console.log(
+        `\u2705 Buyer release confirmation email sent to ${buyer.email}`,
+      );
     }
   } catch (buyerEmailErr) {
-    console.error("\u26a0\ufe0f Buyer release email error (payout succeeded):", buyerEmailErr.message);
+    console.error(
+      "\u26a0\ufe0f Buyer release email error (payout succeeded):",
+      buyerEmailErr.message,
+    );
   }
 
   return {
@@ -903,6 +943,212 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
   }
 });
 
+// --- METHOD 3: MILESTONE RELEASE - Email link (GET /release-milestone/:token) ---
+// The buyer receives an email with a one-time link. Clicking it triggers this
+// GET handler which looks up the milestone by its release_token, processes the
+// payout, and returns a branded HTML confirmation page.
+
+router.get("/release-milestone/:token", async (req, res) => {
+  const { token } = req.params;
+
+  if (!token) {
+    return res.status(400).send(
+      renderPage({ type: "error", title: "Invalid Link", body: "This release link is missing a token." }),
+    );
+  }
+
+  try {
+    // 1. Look up the milestone by its one-time release token
+    const msResult = await db.query(
+      `SELECT im.*, i.invoicenumber, i.invoicename, i.userid AS seller_user_id, i.id AS invoice_id_fk
+         FROM invoice_milestones im
+         JOIN invoices i ON i.id = im.invoice_id
+        WHERE im.release_token = $1`,
+      [token],
+    );
+    if (msResult.rows.length === 0) {
+      return res.status(404).send(
+        renderPage({
+          type: "warning",
+          title: "Link Not Found or Already Used",
+          body: "This release link is invalid or has already been used. Each link can only be used once.",
+          note: "If you believe this is an error, contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a>.",
+        }),
+      );
+    }
+    const milestone = msResult.rows[0];
+
+    // 2. Status guards
+    if (milestone.status === "released") {
+      return res.status(400).send(
+        renderPage({
+          type: "warning",
+          title: "Already Released",
+          body: "This milestone payment has already been released. Each link can only be used once.",
+        }),
+      );
+    }
+    if (milestone.status !== "completed") {
+      return res.status(400).send(
+        renderPage({
+          type: "warning",
+          title: "Not Ready for Release",
+          body: "This milestone cannot be released yet. The seller must mark it as complete first.",
+        }),
+      );
+    }
+
+    // 3. Fetch seller
+    const sellerResult = await db.query("SELECT * FROM users WHERE id = $1", [milestone.seller_user_id]);
+    if (sellerResult.rows.length === 0) {
+      return res.status(404).send(renderPage({ type: "error", title: "Seller Not Found", body: "The seller account could not be found." }));
+    }
+    const seller = sellerResult.rows[0];
+
+    // 4. Atomic lock — prevents double-release from concurrent clicks
+    const lock = await db.query(
+      `UPDATE invoice_milestones
+          SET status        = 'released',
+              released_at   = NOW(),
+              release_token = NULL
+        WHERE id     = $1
+          AND status = 'completed'
+        RETURNING id`,
+      [milestone.id],
+    );
+    if (lock.rows.length === 0) {
+      return res.status(400).send(
+        renderPage({
+          type: "warning",
+          title: "Already Released",
+          body: "This milestone payment has already been released.",
+        }),
+      );
+    }
+
+    // 5. Fee calculation
+    const milestoneAmount = Number(milestone.amount);
+    const referrerCheck = await db.query("SELECT referred_by FROM users WHERE id = $1", [milestone.seller_user_id]);
+    const referrerId = referrerCheck.rows[0]?.referred_by ?? null;
+    const hasReferral = referrerId !== null;
+
+    const totalFee = Math.floor(milestoneAmount * TOTAL_FEE_RATE);
+    const referralEarning = hasReferral ? Math.floor(milestoneAmount * REFERRAL_FEE_RATE) : 0;
+    const sellerReceives = milestoneAmount - totalFee;
+
+    // 6. CamPay payout
+    const campayAuthMs = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    });
+    await axios.post(
+      `${process.env.CAMPAY_BASE_URL}withdraw/`,
+      {
+        amount: sellerReceives.toString(),
+        currency: "XAF",
+        to: seller.phone,
+        description: `Fonlok milestone payout: ${milestone.label} (Invoice ${milestone.invoicenumber})`,
+        external_reference: `milestone-email-${milestone.id}`,
+      },
+      { headers: { Authorization: `Token ${campayAuthMs.data.token}` } },
+    );
+
+    // 7. Record payout
+    await db.query(
+      "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
+      [milestone.seller_user_id, sellerReceives, "Mobile Money", "paid", milestone.invoice_id_fk, milestone.invoicenumber],
+    );
+
+    // 8. In-app notification to seller
+    notifyUser(
+      milestone.seller_user_id,
+      "milestone_released",
+      "Milestone Payout Sent",
+      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
+      { milestoneLabel: milestone.label, amount: sellerReceives, invoiceNumber: milestone.invoicenumber },
+    );
+
+    // 9. Referral credit (non-fatal)
+    if (hasReferral && referralEarning > 0) {
+      try {
+        const refInsert = await db.query(
+          `INSERT INTO referral_earnings (referrer_userid, referred_userid, invoice_number, invoice_amount, earned_amount)
+           VALUES ($1, $2, $3, $4, $5) ON CONFLICT (invoice_number) DO NOTHING RETURNING id`,
+          [referrerId, milestone.seller_user_id, `${milestone.invoicenumber}-ms${milestone.id}`, milestoneAmount, referralEarning],
+        );
+        if (refInsert.rows.length > 0) {
+          await db.query("UPDATE users SET referral_balance = referral_balance + $1 WHERE id = $2", [referralEarning, referrerId]);
+        }
+      } catch (refErr) {
+        console.error("⚠️ Referral credit error (milestone email payout):", refErr.message);
+      }
+    }
+
+    // 10. Check if all milestones released → mark invoice completed
+    const remainingResult = await db.query(
+      "SELECT COUNT(*) AS remaining FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released'",
+      [milestone.invoice_id_fk],
+    );
+    const remaining = parseInt(remainingResult.rows[0].remaining);
+    if (remaining === 0) {
+      await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [milestone.invoice_id_fk]);
+    }
+
+    // 11. Email seller receipt (non-fatal)
+    try {
+      const feeLabel = hasReferral ? "Fonlok Fee (1.5%)" : "Fonlok Fee (2%)";
+      const receiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${milestone.invoicenumber}`;
+      await sgMail.send({
+        to: seller.email,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+        subject: `Milestone Payment Released - ${milestone.label} | Fonlok`,
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent — ${milestone.label}</h2>
+          <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${milestone.invoicename}</strong> and your payment has been processed.</p>
+          ${emailTable([
+            ["Invoice", milestone.invoicenumber],
+            ["Milestone", milestone.label],
+            ["Gross Amount", `${milestoneAmount} XAF`],
+            [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            ["Amount Sent to You", `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            ["Sent To", seller.phone],
+          ])}
+          ${remaining === 0
+            ? '<p style="color:#16a34a;font-weight:600;margin-top:12px;">All milestones have been released. This invoice is now complete.</p>'
+            : `<p style="color:#475569;margin-top:12px;">Remaining milestones: <strong>${remaining}</strong></p>`}
+          ${emailButton(receiptLink, "Download PDF Receipt")}`,
+          { footerNote: "Thank you for using Fonlok. This email confirms your milestone payout has been processed." },
+        ),
+      });
+    } catch (emailErr) {
+      console.error("❌ Seller milestone receipt email error (email link):", emailErr.message);
+    }
+
+    // 12. Return success HTML page to the buyer
+    const reviewHref = `${process.env.FRONTEND_URL}/review/${seller.username}/${milestone.invoicenumber}`;
+    return res.send(
+      renderPage({
+        type: "success",
+        title: "Payment Released",
+        body: `You have successfully released the payment for <strong>${milestone.label}</strong>. The seller has been notified and <strong>${sellerReceives.toLocaleString()} XAF</strong> is on its way to their account.`,
+        ctaHref: reviewHref,
+        ctaLabel: "Leave a Review for This Seller",
+        note: "Thank you for using Fonlok. You may close this page.",
+      }),
+    );
+  } catch (error) {
+    console.error("Milestone email-link release failed:", error.message);
+    return res.status(500).send(
+      renderPage({
+        type: "error",
+        title: "Something Went Wrong",
+        body: "An unexpected error occurred while processing this payment release. No money has been moved.",
+        note: "Please contact <a href='mailto:support@fonlok.com' style='color:#0F1F3D;'>support@fonlok.com</a> with your invoice number.",
+      }),
+    );
+  }
+});
+
 // --- METHOD 3a: MILESTONE RELEASE - Direct JSON API (buyer dashboard UI) ---
 // POST /release-milestone/confirm
 // Body: { invoice_number, buyer_token, milestone_id }
@@ -1006,10 +1252,13 @@ router.post("/release-milestone/confirm", async (req, res) => {
     const fonlokFee = msTotalFee;
 
     // 7. Campay transfer
-    const campayAuth3 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-      username: process.env.CAMPAY_USERNAME,
-      password: process.env.CAMPAY_PASSWORD,
-    });
+    const campayAuth3 = await axios.post(
+      `${process.env.CAMPAY_BASE_URL}token/`,
+      {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      },
+    );
     await axios.post(
       `${process.env.CAMPAY_BASE_URL}withdraw/`,
       {
@@ -1179,11 +1428,18 @@ router.post("/release-milestone/confirm", async (req, res) => {
           `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
           <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
           ${emailTable([
-            [buyerLang === "fr" ? "Num\u00e9ro de facture" : "Invoice Number", invoice.invoicenumber],
+            [
+              buyerLang === "fr" ? "Num\u00e9ro de facture" : "Invoice Number",
+              invoice.invoicenumber,
+            ],
             [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
             [releasedCopy.grossAmount, `${milestoneAmt} XAF`],
             [releasedCopy.feeLabel, `-${msTotalFee} XAF`, "color:#dc2626;"],
-            [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            [
+              releasedCopy.sellerReceived,
+              `${sellerReceives} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
           ])}
           <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
             <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
@@ -1195,7 +1451,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
       });
       console.log(`✅ Buyer milestone release email sent to ${buyerRow.email}`);
     } catch (buyerEmailErr) {
-      console.error("⚠️ Buyer milestone release email error (confirm):", buyerEmailErr.message);
+      console.error(
+        "⚠️ Buyer milestone release email error (confirm):",
+        buyerEmailErr.message,
+      );
     }
 
     return res.status(200).json({
@@ -1329,10 +1588,13 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
     const fonlokFee = totalFee;
 
     // 9. Campay transfer
-    const campayAuth4 = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-      username: process.env.CAMPAY_USERNAME,
-      password: process.env.CAMPAY_PASSWORD,
-    });
+    const campayAuth4 = await axios.post(
+      `${process.env.CAMPAY_BASE_URL}token/`,
+      {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      },
+    );
     await axios.post(
       `${process.env.CAMPAY_BASE_URL}withdraw/`,
       {
@@ -1499,11 +1761,18 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
             <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
             ${emailTable([
-              [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", invoice.invoicenumber],
+              [
+                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+                invoice.invoicenumber,
+              ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
               [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
               [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
-              [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+              [
+                releasedCopy.sellerReceived,
+                `${sellerReceives} XAF`,
+                "font-weight:700;color:#16a34a;font-size:15px;",
+              ],
             ])}
             <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
               <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
@@ -1513,10 +1782,15 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             { footerNote: releasedCopy.footerNote },
           ),
         });
-        console.log(`✅ Buyer milestone release email sent to ${buyerUser.email}`);
+        console.log(
+          `✅ Buyer milestone release email sent to ${buyerUser.email}`,
+        );
       }
     } catch (buyerEmailErr) {
-      console.error("⚠️ Buyer milestone release email error (by-user):", buyerEmailErr.message);
+      console.error(
+        "⚠️ Buyer milestone release email error (by-user):",
+        buyerEmailErr.message,
+      );
     }
 
     return res.status(200).json({
