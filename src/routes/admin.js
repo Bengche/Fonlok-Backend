@@ -1825,10 +1825,17 @@ router.delete("/users/:id", adminMiddleware, async (req, res) => {
             </p>
 
             ${emailTable([
-              ["Account", `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`],
+              [
+                "Account",
+                `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`,
+              ],
               ["Deletion Date", deletionDate],
               ["Action taken by", "Fonlok Moderation Team"],
-              ["Status", '<span style="color:#dc2626;font-weight:700;">Permanently Deleted</span>', ""],
+              [
+                "Status",
+                '<span style="color:#dc2626;font-weight:700;">Permanently Deleted</span>',
+                "",
+              ],
             ])}
 
             <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:20px 0 8px;">

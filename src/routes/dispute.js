@@ -868,10 +868,13 @@ router.post(
             `fee=${totalFeeD}, fonlokNet=${fonlokNetD}, referralEarning=${referralEarningD}, sellerReceives=${sellerShare}`,
         );
 
-        const campayAuthS = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-          username: process.env.CAMPAY_USERNAME,
-          password: process.env.CAMPAY_PASSWORD,
-        });
+        const campayAuthS = await axios.post(
+          `${process.env.CAMPAY_BASE_URL}token/`,
+          {
+            username: process.env.CAMPAY_USERNAME,
+            password: process.env.CAMPAY_PASSWORD,
+          },
+        );
         await axios.post(
           `${process.env.CAMPAY_BASE_URL}withdraw/`,
           {
@@ -995,7 +998,8 @@ router.post(
                 ["Sent To", seller.phone],
               ])}`,
               {
-                footerNote: "Fonlok Escrow  -  dispute resolved in your favour.",
+                footerNote:
+                  "Fonlok Escrow  -  dispute resolved in your favour.",
               },
             ),
           });
@@ -1052,10 +1056,13 @@ router.post(
           `Dispute refund (buyer) ${invoice.invoicenumber}: gross=${effectiveAmount}, fee=${totalFeeD}, refundAmount=${refundAmount}`,
         );
 
-        const campayAuthB = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-          username: process.env.CAMPAY_USERNAME,
-          password: process.env.CAMPAY_PASSWORD,
-        });
+        const campayAuthB = await axios.post(
+          `${process.env.CAMPAY_BASE_URL}token/`,
+          {
+            username: process.env.CAMPAY_USERNAME,
+            password: process.env.CAMPAY_PASSWORD,
+          },
+        );
         await axios.post(
           `${process.env.CAMPAY_BASE_URL}withdraw/`,
           {

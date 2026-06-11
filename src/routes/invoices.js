@@ -1229,6 +1229,7 @@ router.post("/verify", async (req, res) => {
   try {
     const result = await db.query(
       `SELECT
+         i.id,
          i.invoicenumber,
          i.invoicename,
          i.amount,
@@ -1237,10 +1238,14 @@ router.post("/verify", async (req, res) => {
          i.payment_type,
          i.createdat,
          i.paid_at,
+         i.delivered_at,
+         i.expires_at,
          i.description,
+         i.clientemail,
          u.name  AS seller_name,
          u.username AS seller_username,
-         u.country AS seller_country
+         u.country AS seller_country,
+         u.phone AS seller_phone
        FROM invoices i
        JOIN users u ON u.id = i.userid
        WHERE i.invoicenumber = $1`,
@@ -1266,6 +1271,34 @@ router.post("/verify", async (req, res) => {
       });
     }
 
+    // Buyer info (registered or guest)
+    const buyerResult = await db.query(
+      `SELECT g.email, g.momo_number, u.name AS buyer_name
+       FROM guests g
+       LEFT JOIN users u ON u.id = g.user_id
+       WHERE g.invoicenumber = $1
+       ORDER BY g.created_at DESC LIMIT 1`,
+      [raw_number],
+    );
+    const buyerRow = buyerResult.rows[0] || null;
+    const buyerName = buyerRow?.buyer_name || null;
+    const buyerEmail = buyerRow?.email || inv.clientemail || null;
+    const buyerPhone = buyerRow?.momo_number
+      ? `+${buyerRow.momo_number}`
+      : null;
+
+    // Milestones (installment invoices only)
+    let milestones = [];
+    if (inv.payment_type === "installment") {
+      const msResult = await db.query(
+        `SELECT milestone_number, label, amount, status
+         FROM invoice_milestones WHERE invoice_id = $1
+         ORDER BY milestone_number ASC`,
+        [inv.id],
+      );
+      milestones = msResult.rows;
+    }
+
     return res.status(200).json({
       verified: true,
       invoice: {
@@ -1277,10 +1310,17 @@ router.post("/verify", async (req, res) => {
         payment_type: inv.payment_type,
         created_at: inv.createdat,
         paid_at: inv.paid_at,
+        delivered_at: inv.delivered_at,
+        expires_at: inv.expires_at,
         description: inv.description,
         seller_name: inv.seller_name,
         seller_username: inv.seller_username,
         seller_country: inv.seller_country,
+        seller_phone: inv.seller_phone,
+        buyer_name: buyerName,
+        buyer_email: buyerEmail,
+        buyer_phone: buyerPhone,
+        milestones,
       },
     });
   } catch (err) {

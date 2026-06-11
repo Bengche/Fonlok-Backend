@@ -486,10 +486,13 @@ router.get("/poll/:invoice_number", async (req, res) => {
     // fall back to our UUID for older rows created before this fix.
     const campayRef = paymentResult.rows[0].campay_reference || paymentUUID;
 
-    const campayAuthPoll = await axios.post(`${process.env.CAMPAY_BASE_URL}token/`, {
-      username: process.env.CAMPAY_USERNAME,
-      password: process.env.CAMPAY_PASSWORD,
-    });
+    const campayAuthPoll = await axios.post(
+      `${process.env.CAMPAY_BASE_URL}token/`,
+      {
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      },
+    );
     const txResponse = await axios.get(
       `${process.env.CAMPAY_BASE_URL}transaction/${campayRef}/`,
       { headers: { Authorization: `Token ${campayAuthPoll.data.token}` } },

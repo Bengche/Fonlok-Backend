@@ -1071,9 +1071,15 @@ router.post("/release-milestone/:token", async (req, res) => {
       milestone.seller_user_id,
     ]);
     if (sellerResult.rows.length === 0) {
-      return res.status(404).send(
-        renderPage({ type: "error", title: "Seller Not Found", body: "The seller account could not be found." }),
-      );
+      return res
+        .status(404)
+        .send(
+          renderPage({
+            type: "error",
+            title: "Seller Not Found",
+            body: "The seller account could not be found.",
+          }),
+        );
     }
     const seller = sellerResult.rows[0];
 
@@ -1180,7 +1186,10 @@ router.post("/release-milestone/:token", async (req, res) => {
           );
         }
       } catch (refErr) {
-        console.error("⚠️ Referral credit error (milestone email payout):", refErr.message);
+        console.error(
+          "⚠️ Referral credit error (milestone email payout):",
+          refErr.message,
+        );
       }
     }
 
@@ -1212,7 +1221,11 @@ router.post("/release-milestone/:token", async (req, res) => {
             ["Milestone", milestone.label],
             ["Gross Amount", `${milestoneAmount} XAF`],
             [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
-            ["Amount Sent to You", `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+            [
+              "Amount Sent to You",
+              `${sellerReceives} XAF`,
+              "font-weight:700;color:#16a34a;font-size:15px;",
+            ],
             ["Sent To", seller.phone],
           ])}
           ${
@@ -1222,12 +1235,16 @@ router.post("/release-milestone/:token", async (req, res) => {
           }
           ${emailButton(receiptLink, "Download PDF Receipt")}`,
           {
-            footerNote: "Thank you for using Fonlok. This email confirms your milestone payout has been processed.",
+            footerNote:
+              "Thank you for using Fonlok. This email confirms your milestone payout has been processed.",
           },
         ),
       });
     } catch (emailErr) {
-      console.error("❌ Seller milestone receipt email error (email link):", emailErr.message);
+      console.error(
+        "❌ Seller milestone receipt email error (email link):",
+        emailErr.message,
+      );
     }
 
     // 12. Buyer release confirmation email with review link (non-fatal)
@@ -1252,11 +1269,18 @@ router.post("/release-milestone/:token", async (req, res) => {
             `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
             <p style="color:#475569;">${releasedCopy.body(seller.name, milestone.invoicename)}</p>
             ${emailTable([
-              [buyerLang === "fr" ? "Numéro de facture" : "Invoice Number", milestone.invoicenumber],
+              [
+                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+                milestone.invoicenumber,
+              ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
               [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
               [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
-              [releasedCopy.sellerReceived, `${sellerReceives} XAF`, "font-weight:700;color:#16a34a;font-size:15px;"],
+              [
+                releasedCopy.sellerReceived,
+                `${sellerReceives} XAF`,
+                "font-weight:700;color:#16a34a;font-size:15px;",
+              ],
             ])}
             <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
               <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
@@ -1266,10 +1290,15 @@ router.post("/release-milestone/:token", async (req, res) => {
             { footerNote: releasedCopy.footerNote },
           ),
         });
-        console.log(`✅ Buyer milestone release confirmation email sent to ${buyer.email}`);
+        console.log(
+          `✅ Buyer milestone release confirmation email sent to ${buyer.email}`,
+        );
       }
     } catch (buyerEmailErr) {
-      console.error("⚠️ Buyer milestone release email error (email link):", buyerEmailErr.message);
+      console.error(
+        "⚠️ Buyer milestone release email error (email link):",
+        buyerEmailErr.message,
+      );
     }
 
     // 13. Return success HTML page to the buyer

@@ -537,10 +537,17 @@ router.delete(
               </p>
 
               ${emailTable([
-                ["Account", `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`],
+                [
+                  "Account",
+                  `@${escapeHtml(username || "")} &nbsp;·&nbsp; ${escapeHtml(email)}`,
+                ],
                 ["Deletion Date", deletionDate],
                 ["Requested by", "Account holder (self-requested)"],
-                ["Status", '<span style="color:#16a34a;font-weight:700;">Completed</span>', ""],
+                [
+                  "Status",
+                  '<span style="color:#16a34a;font-weight:700;">Completed</span>',
+                  "",
+                ],
               ])}
 
               <p style="color:#475569;font-size:13.5px;line-height:1.7;margin:20px 0 8px;">
@@ -568,7 +575,10 @@ router.delete(
             ),
           });
         } catch (mailErr) {
-          console.warn("Self-delete confirmation email failed:", mailErr.message);
+          console.warn(
+            "Self-delete confirmation email failed:",
+            mailErr.message,
+          );
         }
       }
 
@@ -756,12 +766,10 @@ router.post(
           .status(400)
           .json({ message: "Your account is not suspended." });
       if (appeal_status === "pending")
-        return res
-          .status(409)
-          .json({
-            message:
-              "You already have a pending appeal. Please wait for our team to review it.",
-          });
+        return res.status(409).json({
+          message:
+            "You already have a pending appeal. Please wait for our team to review it.",
+        });
 
       await db.query(
         `UPDATE users SET appeal_text = $1, appeal_status = 'pending', appeal_at = NOW()
