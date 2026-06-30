@@ -25,6 +25,8 @@ import aiChat from "../routes/aiChat.js";
 import uploads from "../routes/uploads.js";
 import passkey from "../routes/passkey.js";
 import kyc from "../routes/kyc.js";
+import sandboxRoutes from "../routes/sandbox.js";
+import sandboxKeys from "../routes/sandboxKeys.js";
 import { startScheduledJobs } from "../jobs/scheduledJobs.js";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -48,6 +50,7 @@ import {
   adminLoginLimiter,
   adminApiLimiter,
   loginOtpLimiter,
+  sandboxLimiter,
 } from "../middleware/rateLimiters.js";
 
 // ── Crash safety: log and survive unhandled errors ───────────────────────────
@@ -81,6 +84,22 @@ const app = express();
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
   .split(",")
   .map((o) => o.trim().replace(/\/$/, "")); // strip trailing slashes
+
+// ── Sandbox CORS — must be registered BEFORE the main app-wide cors(). ───────
+// /sandbox/* routes authenticate via Bearer token (sk_test_*), not cookies.
+// Because there are no credentials involved, we can safely open these routes
+// to any origin — a developer calling from their own app on any domain can
+// make requests without being blocked by the browser's same-origin policy.
+// The API key is the security boundary, not the origin.
+// credentials is deliberately false: cookies are irrelevant here and
+// Access-Control-Allow-Origin: * is incompatible with credentials: true.
+const sandboxCorsOptions = {
+  origin: "*",
+  credentials: false,
+  methods: ["GET", "POST", "PATCH", "OPTIONS"],
+};
+app.use("/sandbox", cors(sandboxCorsOptions));
+app.options("/sandbox/*", cors(sandboxCorsOptions));
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -245,6 +264,14 @@ app.use("/user", user);
 app.use("/api", aiChat);
 app.use("/passkey", passkey);
 app.use("/kyc", kyc);
+
+// ── Sandbox API — developer testing environment ───────────────────────────────
+// All /sandbox/* routes are rate-limited per API key and require a valid
+// sk_test_* Bearer token. They never touch production tables.
+app.use("/sandbox", sandboxLimiter);
+app.use("/sandbox", sandboxRoutes);
+// Sandbox key management — requires a normal user JWT session.
+app.use("/dev", sandboxKeys);
 
 // Serve uploaded files — authenticated only (prevents unauthenticated enumeration)
 app.use("/uploads", uploads);
@@ -546,4 +573,76 @@ app.listen(PORT, async () => {
 
   // Admin 2FA secret in platform_settings (key: admin_totp_secret)
   // No migration needed — uses existing platform_settings kv table
+
+  // ── Sandbox tables — developer testing environment ──────────────────────────
+  // Three dedicated tables that are completely isolated from production data.
+  // sandbox_api_keys: stores hashed test keys (full key is never persisted).
+  // sandbox_invoices: mock invoices created via the sandbox API.
+  // sandbox_transactions: mock payment records created via the sandbox API.
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sandbox_api_keys (
+        id             SERIAL        PRIMARY KEY,
+        user_id        INTEGER       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key_prefix     VARCHAR(20)   NOT NULL,
+        key_hash       TEXT          NOT NULL UNIQUE,
+        label          VARCHAR(80)   NOT NULL,
+        created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        last_used_at   TIMESTAMPTZ,
+        request_count  INTEGER       NOT NULL DEFAULT 0,
+        revoked_at     TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_sandbox_keys_user ON sandbox_api_keys (user_id);
+      CREATE INDEX IF NOT EXISTS idx_sandbox_keys_hash ON sandbox_api_keys (key_hash);
+    `);
+    logger.info("sandbox_api_keys table ready");
+  } catch (err) {
+    logger.warn("sandbox_api_keys migration failed", { error: err.message });
+  }
+
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sandbox_invoices (
+        id              SERIAL        PRIMARY KEY,
+        sandbox_key_id  INTEGER       NOT NULL REFERENCES sandbox_api_keys(id) ON DELETE CASCADE,
+        invoice_id      VARCHAR(40)   NOT NULL UNIQUE,
+        title           VARCHAR(200)  NOT NULL,
+        description     TEXT,
+        amount          NUMERIC(14,2) NOT NULL,
+        currency        VARCHAR(8)    NOT NULL DEFAULT 'XAF',
+        seller_email    VARCHAR(255)  NOT NULL,
+        buyer_email     VARCHAR(255),
+        status          VARCHAR(20)   NOT NULL DEFAULT 'pending',
+        created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_sandbox_invoices_key ON sandbox_invoices (sandbox_key_id);
+    `);
+    logger.info("sandbox_invoices table ready");
+  } catch (err) {
+    logger.warn("sandbox_invoices migration failed", { error: err.message });
+  }
+
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sandbox_transactions (
+        id              SERIAL        PRIMARY KEY,
+        sandbox_key_id  INTEGER       NOT NULL REFERENCES sandbox_api_keys(id) ON DELETE CASCADE,
+        transaction_id  VARCHAR(40)   NOT NULL UNIQUE,
+        invoice_id      VARCHAR(40)   NOT NULL,
+        amount          NUMERIC(14,2) NOT NULL,
+        currency        VARCHAR(8)    NOT NULL DEFAULT 'XAF',
+        provider        VARCHAR(20)   NOT NULL,
+        phone_number    VARCHAR(20)   NOT NULL,
+        status          VARCHAR(20)   NOT NULL DEFAULT 'pending',
+        reference       VARCHAR(40)   NOT NULL UNIQUE,
+        created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_sandbox_txns_key ON sandbox_transactions (sandbox_key_id);
+    `);
+    logger.info("sandbox_transactions table ready");
+  } catch (err) {
+    logger.warn("sandbox_transactions migration failed", { error: err.message });
+  }
 });

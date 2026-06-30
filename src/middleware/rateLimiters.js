@@ -240,3 +240,30 @@ export const adminApiLimiter = rateLimit({
   legacyHeaders: false,
   message: jsonMessage("Too many admin requests. Please slow down."),
 });
+
+// ─── 13. SANDBOX API — developer testing routes ─────────────────────────────
+// Threat: a leaked test key being used to DDoS the sandbox or scrape data.
+// 60 requests per minute is generous for interactive testing and CI pipelines,
+// but will throttle automated abuse.
+// Keyed on a truncated, non-secret prefix of the Bearer token so that
+// different developers using the same IP (e.g. an office NAT) each get
+// their own independent quota bucket.
+export const sandboxLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = req.headers?.authorization ?? "";
+    // Use the first 27 characters of the Authorization header as a bucket key.
+    // "Bearer sk_test_a1b2c3d4e5f6" (27 chars) is non-secret — it's only
+    // the display prefix, never the full credential.
+    if (auth.startsWith("Bearer sk_test_")) {
+      return `sandbox:${auth.slice(0, 27)}`;
+    }
+    return ipKeyGenerator(req);
+  },
+  message: jsonMessage(
+    "Sandbox rate limit exceeded. The sandbox allows 60 requests per minute per API key.",
+  ),
+});
