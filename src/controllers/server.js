@@ -644,7 +644,9 @@ app.listen(PORT, async () => {
     `);
     logger.info("sandbox_transactions table ready");
   } catch (err) {
-    logger.warn("sandbox_transactions migration failed", { error: err.message });
+    logger.warn("sandbox_transactions migration failed", {
+      error: err.message,
+    });
   }
 
   // Add type, direction, and description columns to sandbox_transactions.
@@ -657,9 +659,13 @@ app.listen(PORT, async () => {
         ADD COLUMN IF NOT EXISTS direction   VARCHAR(10) NOT NULL DEFAULT 'inbound',
         ADD COLUMN IF NOT EXISTS description TEXT        DEFAULT NULL
     `);
-    logger.info("sandbox_transactions type/direction/description columns ready");
+    logger.info(
+      "sandbox_transactions type/direction/description columns ready",
+    );
   } catch (err) {
-    logger.warn("sandbox_transactions columns migration failed", { error: err.message });
+    logger.warn("sandbox_transactions columns migration failed", {
+      error: err.message,
+    });
   }
 
   // Webhook delivery log — stores every simulated webhook attempt for audit.
@@ -680,6 +686,8 @@ app.listen(PORT, async () => {
     `);
     logger.info("sandbox_webhook_logs table ready");
   } catch (err) {
-    logger.warn("sandbox_webhook_logs migration failed", { error: err.message });
+    logger.warn("sandbox_webhook_logs migration failed", {
+      error: err.message,
+    });
   }
 });

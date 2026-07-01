@@ -210,7 +210,12 @@ router.get("/invoices", async (req, res) => {
 // ── GET /sandbox/invoices/:invoice_id ────────────────────────────────────────
 router.get(
   "/invoices/:invoice_id",
-  [param("invoice_id").trim().notEmpty().withMessage("invoice_id is required.")],
+  [
+    param("invoice_id")
+      .trim()
+      .notEmpty()
+      .withMessage("invoice_id is required."),
+  ],
   validate,
   async (req, res) => {
     const keyId = req.sandboxKey.id;
@@ -233,7 +238,11 @@ router.get(
       }
 
       const row = result.rows[0];
-      return res.json({ ...row, amount: parseFloat(row.amount), _sandbox: true });
+      return res.json({
+        ...row,
+        amount: parseFloat(row.amount),
+        _sandbox: true,
+      });
     } catch (err) {
       logger.error("Failed to fetch sandbox invoice", { error: err.message });
       return res.status(500).json({
@@ -245,12 +254,21 @@ router.get(
 );
 
 // ── PATCH /sandbox/invoices/:invoice_id — update invoice status ──────────────
-const VALID_STATUSES = ["pending", "paid", "delivered", "cancelled", "disputed"];
+const VALID_STATUSES = [
+  "pending",
+  "paid",
+  "delivered",
+  "cancelled",
+  "disputed",
+];
 
 router.patch(
   "/invoices/:invoice_id",
   [
-    param("invoice_id").trim().notEmpty().withMessage("invoice_id is required."),
+    param("invoice_id")
+      .trim()
+      .notEmpty()
+      .withMessage("invoice_id is required."),
     body("status")
       .isIn(VALID_STATUSES)
       .withMessage(`status must be one of: ${VALID_STATUSES.join(", ")}.`),
@@ -279,7 +297,11 @@ router.patch(
       }
 
       const row = result.rows[0];
-      return res.json({ ...row, amount: parseFloat(row.amount), _sandbox: true });
+      return res.json({
+        ...row,
+        amount: parseFloat(row.amount),
+        _sandbox: true,
+      });
     } catch (err) {
       logger.error("Failed to update sandbox invoice", { error: err.message });
       return res.status(500).json({
@@ -351,7 +373,15 @@ router.post(
            (sandbox_key_id, transaction_id, invoice_id, amount, currency,
             provider, phone_number, status, reference, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'XAF', $5, $6, 'pending', $7, NOW(), NOW())`,
-        [keyId, transactionId, invoice_id, amount, provider, phone_number, reference],
+        [
+          keyId,
+          transactionId,
+          invoice_id,
+          amount,
+          provider,
+          phone_number,
+          reference,
+        ],
       );
 
       return res.status(201).json({
@@ -373,7 +403,9 @@ router.post(
         },
       });
     } catch (err) {
-      logger.error("Failed to initiate sandbox payment", { error: err.message });
+      logger.error("Failed to initiate sandbox payment", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to initiate payment.",
@@ -385,12 +417,7 @@ router.post(
 // ── POST /sandbox/payments/:reference/confirm ────────────────────────────────
 router.post(
   "/payments/:reference/confirm",
-  [
-    param("reference")
-      .trim()
-      .notEmpty()
-      .withMessage("reference is required."),
-  ],
+  [param("reference").trim().notEmpty().withMessage("reference is required.")],
   validate,
   async (req, res) => {
     const keyId = req.sandboxKey.id;
@@ -567,9 +594,15 @@ router.get(
       }
 
       const row = result.rows[0];
-      return res.json({ ...row, amount: parseFloat(row.amount), _sandbox: true });
+      return res.json({
+        ...row,
+        amount: parseFloat(row.amount),
+        _sandbox: true,
+      });
     } catch (err) {
-      logger.error("Failed to fetch sandbox transaction", { error: err.message });
+      logger.error("Failed to fetch sandbox transaction", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to retrieve transaction.",
@@ -645,7 +678,17 @@ router.post(
             created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, 'charge', 'inbound', $9, NOW(), NOW())`,
         // invoice_id stored as 'standalone' — no FK to sandbox_invoices for pure MoMo charges.
-        [keyId, transactionId, "standalone", amount, currency, provider, phone_number, reference, description],
+        [
+          keyId,
+          transactionId,
+          "standalone",
+          amount,
+          currency,
+          provider,
+          phone_number,
+          reference,
+          description,
+        ],
       );
 
       return res.status(201).json({
@@ -667,7 +710,9 @@ router.post(
         },
       });
     } catch (err) {
-      logger.error("Failed to initiate standalone MoMo charge", { error: err.message });
+      logger.error("Failed to initiate standalone MoMo charge", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to initiate charge.",
@@ -711,7 +756,9 @@ router.post(
         message: "Sandbox: MoMo charge confirmed. No real money moved.",
       });
     } catch (err) {
-      logger.error("Failed to confirm standalone MoMo charge", { error: err.message });
+      logger.error("Failed to confirm standalone MoMo charge", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to confirm charge.",
@@ -763,7 +810,9 @@ router.post(
         message: "Sandbox: MoMo charge failed.",
       });
     } catch (err) {
-      logger.error("Failed to fail standalone MoMo charge", { error: err.message });
+      logger.error("Failed to fail standalone MoMo charge", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to process failure.",
@@ -782,16 +831,16 @@ router.post(
 // ────────────────────────────────────────────────────────────────────────────
 
 const PRIVATE_IP_PATTERNS = [
-  /^127\./,                              // loopback
-  /^10\./,                               // RFC-1918
-  /^172\.(1[6-9]|2\d|3[01])\./,         // RFC-1918
-  /^192\.168\./,                         // RFC-1918
-  /^169\.254\./,                         // link-local / AWS metadata
-  /^0\./,                                // "this" network
+  /^127\./, // loopback
+  /^10\./, // RFC-1918
+  /^172\.(1[6-9]|2\d|3[01])\./, // RFC-1918
+  /^192\.168\./, // RFC-1918
+  /^169\.254\./, // link-local / AWS metadata
+  /^0\./, // "this" network
   /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // CGNAT RFC-6598
-  /^::1$/,                               // IPv6 loopback
-  /^fc00:/i,                             // IPv6 unique local
-  /^fe80:/i,                             // IPv6 link-local
+  /^::1$/, // IPv6 loopback
+  /^fc00:/i, // IPv6 unique local
+  /^fe80:/i, // IPv6 link-local
 ];
 
 async function isSafeCallbackUrl(rawUrl) {
@@ -809,13 +858,19 @@ async function isSafeCallbackUrl(rawUrl) {
   const hostname = parsed.hostname.toLowerCase();
   const blockedNames = ["localhost", "0.0.0.0", "metadata.google.internal"];
   if (blockedNames.includes(hostname)) {
-    return { safe: false, reason: `'${hostname}' is not allowed as a callback URL.` };
+    return {
+      safe: false,
+      reason: `'${hostname}' is not allowed as a callback URL.`,
+    };
   }
 
   // Raw IP — check directly without DNS.
   if (net.isIPv4(hostname) || net.isIPv6(hostname)) {
     if (PRIVATE_IP_PATTERNS.some((r) => r.test(hostname))) {
-      return { safe: false, reason: "Private IP ranges are not allowed as callback URLs." };
+      return {
+        safe: false,
+        reason: "Private IP ranges are not allowed as callback URLs.",
+      };
     }
     return { safe: true };
   }
@@ -832,7 +887,10 @@ async function isSafeCallbackUrl(rawUrl) {
       }
     }
   } catch {
-    return { safe: false, reason: "Could not resolve the callback URL hostname." };
+    return {
+      safe: false,
+      reason: "Could not resolve the callback URL hostname.",
+    };
   }
 
   return { safe: true };
@@ -952,7 +1010,15 @@ router.post(
             created_at, updated_at)
          VALUES ($1, $2, 'standalone', $3, 'XAF', $4, $5, 'pending', $6,
                  'withdraw', 'outbound', $7, NOW(), NOW())`,
-        [keyId, transactionId, amount, provider, phone_number, reference, description],
+        [
+          keyId,
+          transactionId,
+          amount,
+          provider,
+          phone_number,
+          reference,
+          description,
+        ],
       );
 
       return res.status(201).json({
@@ -976,7 +1042,9 @@ router.post(
         },
       });
     } catch (err) {
-      logger.error("Failed to initiate sandbox withdrawal", { error: err.message });
+      logger.error("Failed to initiate sandbox withdrawal", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to initiate withdrawal.",
@@ -998,10 +1066,7 @@ router.post(
 router.post(
   "/momo/webhook/simulate",
   [
-    body("reference")
-      .trim()
-      .notEmpty()
-      .withMessage("reference is required."),
+    body("reference").trim().notEmpty().withMessage("reference is required."),
     body("callback_url")
       .trim()
       .notEmpty()
@@ -1023,7 +1088,9 @@ router.post(
     // ── 1. SSRF check ────────────────────────────────────────────────────────
     const { safe, reason } = await isSafeCallbackUrl(callback_url);
     if (!safe) {
-      return res.status(400).json({ error: "unsafe_callback_url", message: reason });
+      return res
+        .status(400)
+        .json({ error: "unsafe_callback_url", message: reason });
     }
 
     // ── 2. Look up the transaction ────────────────────────────────────────────
@@ -1044,8 +1111,12 @@ router.post(
       }
       txn = result.rows[0];
     } catch (err) {
-      logger.error("Webhook simulate: DB lookup failed", { error: err.message });
-      return res.status(500).json({ error: "server_error", message: "Database error." });
+      logger.error("Webhook simulate: DB lookup failed", {
+        error: err.message,
+      });
+      return res
+        .status(500)
+        .json({ error: "server_error", message: "Database error." });
     }
 
     // ── 3. Build the provider-specific payload ────────────────────────────────
@@ -1220,7 +1291,15 @@ router.post(
             created_at, updated_at)
          VALUES ($1, $2, 'standalone', $3, 'XAF', $4, $5, 'pending', $6,
                  'airtime', 'outbound', $7, NOW(), NOW())`,
-        [keyId, transactionId, amount, provider, phone_number, reference, description],
+        [
+          keyId,
+          transactionId,
+          amount,
+          provider,
+          phone_number,
+          reference,
+          description,
+        ],
       );
 
       return res.status(201).json({
@@ -1287,7 +1366,8 @@ router.post(
         ...row,
         amount: parseInt(row.amount, 10),
         _sandbox: true,
-        message: "Sandbox: Airtime top-up confirmed. No real airtime was credited.",
+        message:
+          "Sandbox: Airtime top-up confirmed. No real airtime was credited.",
       });
     } catch (err) {
       logger.error("Failed to confirm sandbox airtime top-up", {
@@ -1345,7 +1425,9 @@ router.post(
         message: "Sandbox: Airtime top-up failed.",
       });
     } catch (err) {
-      logger.error("Failed to fail sandbox airtime top-up", { error: err.message });
+      logger.error("Failed to fail sandbox airtime top-up", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to process failure.",
@@ -1387,7 +1469,9 @@ router.get(
         _sandbox: true,
       });
     } catch (err) {
-      logger.error("Failed to fetch sandbox airtime status", { error: err.message });
+      logger.error("Failed to fetch sandbox airtime status", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to retrieve status.",
