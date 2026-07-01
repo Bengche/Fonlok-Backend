@@ -99,7 +99,8 @@ const sandboxCorsOptions = {
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
 };
 app.use("/sandbox", cors(sandboxCorsOptions));
-app.options("/sandbox/*", cors(sandboxCorsOptions));
+// Note: cors() already intercepts OPTIONS preflights internally — no
+// separate app.options() handler is needed for /sandbox/*.
 
 const corsOptions = {
   origin: (origin, callback) => {
