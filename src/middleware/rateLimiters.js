@@ -17,6 +17,7 @@
 
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 // ─── Helper: consistent JSON error shape ────────────────────────────────────
 const jsonMessage = (msg) => ({
@@ -255,11 +256,17 @@ export const sandboxLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const auth = req.headers?.authorization ?? "";
-    // Use the first 27 characters of the Authorization header as a bucket key.
-    // "Bearer sk_test_a1b2c3d4e5f6" (27 chars) is non-secret — it's only
-    // the display prefix, never the full credential.
     if (auth.startsWith("Bearer sk_test_")) {
-      return `sandbox:${auth.slice(0, 27)}`;
+      // Hash the raw key so no credential material is stored in the
+      // rate-limit bucket key. A truncated SHA-256 (16 hex chars) gives
+      // a stable, unique, non-reversible bucket identifier per key.
+      const rawKey = auth.slice(7).trim();
+      const bucket = crypto
+        .createHash("sha256")
+        .update(rawKey)
+        .digest("hex")
+        .slice(0, 16);
+      return `sandbox:${bucket}`;
     }
     return ipKeyGenerator(req);
   },
