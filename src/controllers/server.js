@@ -646,4 +646,40 @@ app.listen(PORT, async () => {
   } catch (err) {
     logger.warn("sandbox_transactions migration failed", { error: err.message });
   }
+
+  // Add type, direction, and description columns to sandbox_transactions.
+  // These support the withdraw, airtime, and status-check features.
+  // The DEFAULT values ensure existing rows ('charge', 'inbound') are valid.
+  try {
+    await db.query(`
+      ALTER TABLE sandbox_transactions
+        ADD COLUMN IF NOT EXISTS type        VARCHAR(20) NOT NULL DEFAULT 'charge',
+        ADD COLUMN IF NOT EXISTS direction   VARCHAR(10) NOT NULL DEFAULT 'inbound',
+        ADD COLUMN IF NOT EXISTS description TEXT        DEFAULT NULL
+    `);
+    logger.info("sandbox_transactions type/direction/description columns ready");
+  } catch (err) {
+    logger.warn("sandbox_transactions columns migration failed", { error: err.message });
+  }
+
+  // Webhook delivery log — stores every simulated webhook attempt for audit.
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sandbox_webhook_logs (
+        id              SERIAL        PRIMARY KEY,
+        sandbox_key_id  INTEGER       NOT NULL REFERENCES sandbox_api_keys(id) ON DELETE CASCADE,
+        reference       VARCHAR(40)   NOT NULL,
+        callback_url    TEXT          NOT NULL,
+        payload         JSONB         NOT NULL,
+        response_status INTEGER,
+        error           TEXT,
+        created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_sandbox_webhook_logs_key
+        ON sandbox_webhook_logs (sandbox_key_id);
+    `);
+    logger.info("sandbox_webhook_logs table ready");
+  } catch (err) {
+    logger.warn("sandbox_webhook_logs migration failed", { error: err.message });
+  }
 });
