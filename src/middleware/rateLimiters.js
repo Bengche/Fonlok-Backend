@@ -274,3 +274,37 @@ export const sandboxLimiter = rateLimit({
     "Sandbox rate limit exceeded. The sandbox allows 60 requests per minute per API key.",
   ),
 });
+
+// ─── 14. PRODUCTION API (/v1/*) — live key rate limiting ─────────────────────
+// Threat: a leaked live key used for scraping, invoice spamming, or payment
+// flooding. Live keys are higher-value targets than sandbox keys.
+//
+// Limits are intentionally tighter than sandbox:
+//   - 30 requests/minute covers any legitimate integration (polls, invoice
+//     creation, payment initiation). An automated attack hits this immediately.
+//   - Payment initiation is further capped separately in server.js via the
+//     existing paymentByIpLimiter to prevent MoMo prompt flooding.
+//
+// Keyed on a non-reversible hash of the live key (same pattern as sandbox).
+export const liveApiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = req.headers?.authorization ?? "";
+    if (auth.startsWith("Bearer sk_live_")) {
+      const rawKey = auth.slice(7).trim();
+      const bucket = crypto
+        .createHash("sha256")
+        .update(rawKey)
+        .digest("hex")
+        .slice(0, 16);
+      return `live_api:${bucket}`;
+    }
+    return ipKeyGenerator(req);
+  },
+  message: jsonMessage(
+    "API rate limit exceeded. Live API keys are limited to 30 requests per minute. Please back off and retry.",
+  ),
+});

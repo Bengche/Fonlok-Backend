@@ -27,6 +27,8 @@ import passkey from "../routes/passkey.js";
 import kyc from "../routes/kyc.js";
 import sandboxRoutes from "../routes/sandbox.js";
 import sandboxKeys from "../routes/sandboxKeys.js";
+import v1Routes from "../routes/v1.js";
+import apiKeys from "../routes/apiKeys.js";
 import { startScheduledJobs } from "../jobs/scheduledJobs.js";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -51,6 +53,7 @@ import {
   adminApiLimiter,
   loginOtpLimiter,
   sandboxLimiter,
+  liveApiLimiter,
 } from "../middleware/rateLimiters.js";
 
 // ── Crash safety: log and survive unhandled errors ───────────────────────────
@@ -99,6 +102,15 @@ const sandboxCorsOptions = {
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
 };
 app.use("/sandbox", cors(sandboxCorsOptions));
+
+// ── Production API CORS — same as sandbox: Bearer-token auth, no cookies. ─────
+// Any origin is allowed because the API key is the security boundary.
+const v1CorsOptions = {
+  origin: "*",
+  credentials: false,
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+};
+app.use("/v1", cors(v1CorsOptions));
 // Note: cors() already intercepts OPTIONS preflights internally — no
 // separate app.options() handler is needed for /sandbox/*.
 
@@ -273,6 +285,14 @@ app.use("/sandbox", sandboxLimiter);
 app.use("/sandbox", sandboxRoutes);
 // Sandbox key management — requires a normal user JWT session.
 app.use("/dev", sandboxKeys);
+
+// ── Production API (/v1/*) — live third-party integration ─────────────────────
+// All /v1/* routes require a valid sk_live_* Bearer token (apiKeyAuth).
+// Rate-limited independently from sandbox. Real payments are processed.
+app.use("/v1", liveApiLimiter);
+app.use("/v1", v1Routes);
+// Live API key management — requires a normal user JWT session.
+app.use("/dev", apiKeys);
 
 // Serve uploaded files — authenticated only (prevents unauthenticated enumeration)
 app.use("/uploads", uploads);
@@ -689,5 +709,75 @@ app.listen(PORT, async () => {
     logger.warn("sandbox_webhook_logs migration failed", {
       error: err.message,
     });
+  }
+
+  // ── Live production API tables ───────────────────────────────────────────────
+  // api_keys      : hashed sk_live_* credentials for third-party integrations
+  // api_webhooks  : registered webhook endpoints per seller account
+  // Both are isolated from sandbox tables and never share keys or data.
+
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id             SERIAL       PRIMARY KEY,
+        user_id        INTEGER      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key_prefix     VARCHAR(16)  NOT NULL,
+        key_hash       CHAR(64)     NOT NULL UNIQUE,
+        label          VARCHAR(80)  NOT NULL DEFAULT '',
+        request_count  BIGINT       NOT NULL DEFAULT 0,
+        last_used_at   TIMESTAMPTZ,
+        revoked_at     TIMESTAMPTZ,
+        created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS api_keys_hash_idx ON api_keys (key_hash)
+    `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS api_keys_user_idx ON api_keys (user_id)
+    `);
+    logger.info("api_keys table ready");
+  } catch (err) {
+    logger.warn("api_keys migration failed", { error: err.message });
+  }
+
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS api_webhooks (
+        id                SERIAL       PRIMARY KEY,
+        user_id           INTEGER      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        url               TEXT         NOT NULL,
+        label             VARCHAR(80)  NOT NULL DEFAULT '',
+        secret            TEXT         NOT NULL,
+        secret_hash       CHAR(64)     NOT NULL,
+        active            BOOLEAN      NOT NULL DEFAULT true,
+        last_triggered_at TIMESTAMPTZ,
+        created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS api_webhooks_user_idx
+        ON api_webhooks (user_id, active)
+    `);
+    logger.info("api_webhooks table ready");
+  } catch (err) {
+    logger.warn("api_webhooks migration failed", { error: err.message });
+  }
+
+  // Add external_reference and created_via_api to invoices for the live API.
+  try {
+    await db.query(`
+      ALTER TABLE invoices
+        ADD COLUMN IF NOT EXISTS external_reference VARCHAR(200),
+        ADD COLUMN IF NOT EXISTS created_via_api    BOOLEAN NOT NULL DEFAULT false
+    `);
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS invoices_external_reference_user_idx
+        ON invoices (userid, external_reference)
+        WHERE external_reference IS NOT NULL
+    `);
+    logger.info("invoices.external_reference + created_via_api columns ready");
+  } catch (err) {
+    logger.warn("invoices API columns migration failed", { error: err.message });
   }
 });

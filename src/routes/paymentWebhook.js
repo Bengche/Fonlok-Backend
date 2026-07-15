@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import db from "../controllers/db.js";
 import crypto from "crypto";
 import { notifyUser } from "../middleware/notificationHelper.js";
+import { deliverWebhookEvent } from "../routes/v1.js";
 import {
   emailWrap,
   emailTable,
@@ -417,10 +418,26 @@ export async function processSuccessfulPayment(paymentUUID) {
     );
   }
 
+  // ── Fire live API webhooks for third-party integrations (e.g. Njimbong) ──
+  // Delivered asynchronously — never let a webhook failure abort the payment flow.
+  deliverWebhookEvent(idUser, "payment.confirmed", {
+    object: "event",
+    type: "payment.confirmed",
+    invoice_id: invoice_number,
+    reference: payment.providerpaymentid,
+    amount: parseFloat(payment.amount),
+    currency: payment.currency ?? "XAF",
+    provider: payment.provider,
+    status: "paid",
+    timestamp: new Date().toISOString(),
+  }).catch((e) =>
+    console.error("⚠️  API webhook delivery error (non-fatal):", e.message),
+  );
+
   return "done";
 }
 
-// â”€â”€â”€ Route 1: Campay webhook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Route 1: Campay webhook ──────────────────────────────────────────────────
 router.post("/confirmation", async (req, res) => {
   const signature = req.body.signature;
   const paymentUUID = req.body.external_reference;
@@ -429,7 +446,7 @@ router.post("/confirmation", async (req, res) => {
 
   try {
     jwt.verify(signature, webhookSecret);
-    console.log("âœ…  Campay webhook signature verified.");
+    console.log("✅  Campay webhook signature verified.");
 
     if (status === "SUCCESSFUL") {
       const result = await processSuccessfulPayment(paymentUUID);
@@ -440,7 +457,7 @@ router.post("/confirmation", async (req, res) => {
 
     return res.status(200).send("OK");
   } catch (err) {
-    console.error("âŒ  Webhook error:", err.message);
+    console.error("❌  Webhook error:", err.message);
     if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
       return res.status(401).send("Invalid Signature");
     }
@@ -448,11 +465,7 @@ router.post("/confirmation", async (req, res) => {
   }
 });
 
-// â”€â”€â”€ Route 2: Frontend poll endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// The payment-pending page calls this every 4 s.
-// Fast path: if DB already says paid â†’ return immediately.
-// Slow path: ask Campay API directly and process if SUCCESSFUL.
-// This works even when the webhook can't reach the server (ngrok, firewall, etc.).
+// ─── Route 2: Frontend poll endpoint ─────────────────────────────────────────
 router.get("/poll/:invoice_number", async (req, res) => {
   const { invoice_number } = req.params;
 
