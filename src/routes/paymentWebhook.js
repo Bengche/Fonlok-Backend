@@ -355,7 +355,10 @@ export async function processSuccessfulPayment(paymentUUID) {
   <p style="color:#64748b;font-size:13px;">Escrow service powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a>. Contact support@fonlok.com if you have any questions.</p>
 </div>`,
       });
-      console.log("✅  Invoice-paid email sent to API seller:", invoice.seller_email);
+      console.log(
+        "✅  Invoice-paid email sent to API seller:",
+        invoice.seller_email,
+      );
     } catch (sellerEmailErr) {
       console.error(
         "⚠️  Could not send invoice-paid email to API seller:",
@@ -417,7 +420,9 @@ export async function processSuccessfulPayment(paymentUUID) {
               ],
               [sellerLanguage === "fr" ? "Acheteur" : "Buyer", buyerName],
               [
-                sellerLanguage === "fr" ? "Statut du séquestre" : "Escrow Status",
+                sellerLanguage === "fr"
+                  ? "Statut du séquestre"
+                  : "Escrow Status",
                 sellerLanguage === "fr"
                   ? "&#10003;&nbsp;Fonds sécurisés"
                   : "&#10003;&nbsp;Funds Secured",
