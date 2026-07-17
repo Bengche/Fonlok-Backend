@@ -322,7 +322,7 @@ router.post(
                    createdat AS created_at`,
         [
           title,
-          buyer_email || seller_email,
+          buyer_email || null,
           currency,
           parseFloat(amount),
           invoiceNumber,
@@ -528,14 +528,19 @@ router.post(
       );
 
       // 3. Save buyer contact details (for emails and confirmation code).
-      const effectiveBuyerEmail = buyer_email || inv.clientemail;
-      await db.query(
-        `INSERT INTO guests (email, momo_number, invoicenumber)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (email, invoicenumber)
-         DO UPDATE SET momo_number = EXCLUDED.momo_number`,
-        [effectiveBuyerEmail, phone_number, inv.invoicenumber],
-      );
+      // Only persist when a real buyer email is available so we never write
+      // the seller's address into the guests table and accidentally direct
+      // both confirmation emails to the seller.
+      const effectiveBuyerEmail = buyer_email || inv.clientemail || null;
+      if (effectiveBuyerEmail) {
+        await db.query(
+          `INSERT INTO guests (email, momo_number, invoicenumber)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (email, invoicenumber)
+           DO UPDATE SET momo_number = EXCLUDED.momo_number`,
+          [effectiveBuyerEmail, phone_number, inv.invoicenumber],
+        );
+      }
 
       // 4. Authenticate with Campay and trigger the real MoMo prompt.
       let campayToken;
