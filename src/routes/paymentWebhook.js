@@ -331,91 +331,125 @@ export async function processSuccessfulPayment(paymentUUID) {
 
   // 9. Notify seller - in-app bell + push + email
   // ─────────────────────────────────────────────────────────────────────────
-  // In-app / push notification (non-fatal)
-  notifyUser(
-    idUser,
-    "invoice_paid",
-    "Invoice Paid - Deliver Now",
-    `Invoice ${invoice_number} has been paid. ${payment.amount} XAF is secured in escrow. Please deliver what was ordered so funds can be released to you.`,
-    { invoiceNumber: invoice_number, amount: payment.amount },
-  );
-
-  // Email notification to seller
-  try {
-    const sellerResult = await db.query(
-      "SELECT email, name FROM users WHERE id = $1 LIMIT 1",
-      [idUser],
-    );
-    if (sellerResult.rows.length > 0) {
-      const seller = sellerResult.rows[0];
-      const sellerLanguage = await getUserEmailLanguageByEmail(seller.email);
-      const invoicePaidCopy = buildEmailCopy(sellerLanguage, "invoicePaid");
-      const sellerDashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
-      const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
-      const sellerFirstName = (seller.name || "there").split(" ")[0];
-      // Buyer name from guests table (best-effort)
-      let buyerName = "the buyer";
-      try {
-        const guestName = await db.query(
-          "SELECT name FROM guests WHERE invoicenumber = $1 ORDER BY created_at DESC LIMIT 1",
-          [invoice_number],
-        );
-        if (guestName.rows[0]?.name) buyerName = guestName.rows[0].name;
-      } catch (_) {
-        /* non-fatal */
-      }
-
-      const sellerMsg = {
-        to: seller.email,
+  if (invoice.created_via_api && invoice.seller_email) {
+    // ── API-created invoice (e.g. Njimbong) ───────────────────────────────
+    // The seller is not a Fonlok user. Use the contact details Njimbong
+    // provided on the invoice. Do NOT send push/bell notifications to the
+    // API key owner's Fonlok account — that would be a different person.
+    try {
+      const sellerFirstName = (invoice.seller_name || "there").split(" ")[0];
+      await sgMail.send({
+        to: invoice.seller_email,
         from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
-        subject: invoicePaidCopy.subject(invoice_number),
-        html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">${invoicePaidCopy.title}</h2>
-          <p style="color:#475569;">${invoicePaidCopy.body(buyerName, sellerFirstName)}</p>
-          <p style="color:#475569;margin-bottom:20px;">${sellerLanguage === "fr" ? "Votre prochaine étape est de livrer les biens ou services que vous avez promis. Une fois que l'acheteur confirme la réception, les fonds vous seront libérés directement." : "Your next step is to deliver the goods or service you promised. Once the buyer confirms receipt, the funds will be released directly to you."}</p>
-          ${emailTable([
-            ["Invoice Number", invoice_number],
-            [
-              sellerLanguage === "fr"
-                ? "Montant en séquestre"
-                : "Amount in Escrow",
-              `${payment.amount} XAF`,
-              "font-weight:700;color:#16a34a;font-size:15px;",
-            ],
-            [sellerLanguage === "fr" ? "Acheteur" : "Buyer", buyerName],
-            [
-              sellerLanguage === "fr" ? "Statut du séquestre" : "Escrow Status",
-              sellerLanguage === "fr"
-                ? "&#10003;&nbsp;Fonds sécurisés"
-                : "&#10003;&nbsp;Funds Secured",
-              "color:#16a34a;font-weight:600;",
-            ],
-          ])}
-          <h3 style="color:#0F1F3D;margin:24px 0 8px;">${invoicePaidCopy.nextTitle}</h3>
-          <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
-            <li>${invoicePaidCopy.nextStep1}</li>
-            <li>${invoicePaidCopy.nextStep2}</li>
-            <li>${invoicePaidCopy.nextStep3}</li>
-          </ol>
-          ${emailButton(sellerChatLink, invoicePaidCopy.button)}
-          ${emailButton(sellerDashboardLink, sellerLanguage === "fr" ? "Aller au tableau de bord" : "Go to Dashboard")}
-          <p style="color:#94a3b8;font-size:13px;margin-top:20px;">${invoicePaidCopy.footer}</p>`,
-          {
-            footerNote:
-              sellerLanguage === "fr"
-                ? "Vous avez reçu cet e-mail parce que l'une de vos factures Fonlok a été payée. Ne partagez vos identifiants de compte avec personne."
-                : "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
-          },
-        ),
-      };
-      await sgMail.send(sellerMsg);
-      console.log("✅  Invoice-paid email sent to seller.");
+        subject: `Your item has been purchased — ${invoice.invoicename}`,
+        html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px 24px;color:#1e293b;">
+  <h2 style="color:#0F1F3D;margin:0 0 16px;">Your item has been purchased</h2>
+  <p>Hi ${sellerFirstName},</p>
+  <p style="margin-top:12px;">A buyer has paid <strong>${payment.amount} XAF</strong> for <strong>${invoice.invoicename}</strong>. The funds are held securely in escrow.</p>
+  <p style="margin-top:12px;">Please fulfil the order. Once the buyer confirms receipt, the funds will be released directly to your Mobile Money number ending in <strong>···${invoice.seller_phone ? invoice.seller_phone.slice(-4) : "????"}.</strong></p>
+  <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Item</td><td style="padding:10px 0;text-align:right;font-weight:600;">${invoice.invoicename}</td></tr>
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Amount in escrow</td><td style="padding:10px 0;text-align:right;font-weight:700;color:#16a34a;">${payment.amount} XAF</td></tr>
+    <tr><td style="padding:10px 0;color:#64748b;">Reference</td><td style="padding:10px 0;text-align:right;">${invoice_number}</td></tr>
+  </table>
+  <p style="color:#64748b;font-size:13px;">Escrow service powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a>. Contact support@fonlok.com if you have any questions.</p>
+</div>`,
+      });
+      console.log("✅  Invoice-paid email sent to API seller:", invoice.seller_email);
+    } catch (sellerEmailErr) {
+      console.error(
+        "⚠️  Could not send invoice-paid email to API seller:",
+        sellerEmailErr.response?.body ?? sellerEmailErr.message,
+      );
     }
-  } catch (sellerEmailErr) {
-    console.error(
-      "⚠️  Could not send invoice-paid email to seller:",
-      sellerEmailErr.response?.body ?? sellerEmailErr.message,
+  } else {
+    // ── Native Fonlok invoice ─────────────────────────────────────────────
+    // In-app / push notification (non-fatal)
+    notifyUser(
+      idUser,
+      "invoice_paid",
+      "Invoice Paid - Deliver Now",
+      `Invoice ${invoice_number} has been paid. ${payment.amount} XAF is secured in escrow. Please deliver what was ordered so funds can be released to you.`,
+      { invoiceNumber: invoice_number, amount: payment.amount },
     );
+
+    // Email notification to seller
+    try {
+      const sellerResult = await db.query(
+        "SELECT email, name FROM users WHERE id = $1 LIMIT 1",
+        [idUser],
+      );
+      if (sellerResult.rows.length > 0) {
+        const seller = sellerResult.rows[0];
+        const sellerLanguage = await getUserEmailLanguageByEmail(seller.email);
+        const invoicePaidCopy = buildEmailCopy(sellerLanguage, "invoicePaid");
+        const sellerDashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+        const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${invoice_number}`;
+        const sellerFirstName = (seller.name || "there").split(" ")[0];
+        // Buyer name from guests table (best-effort)
+        let buyerName = "the buyer";
+        try {
+          const guestName = await db.query(
+            "SELECT name FROM guests WHERE invoicenumber = $1 ORDER BY created_at DESC LIMIT 1",
+            [invoice_number],
+          );
+          if (guestName.rows[0]?.name) buyerName = guestName.rows[0].name;
+        } catch (_) {
+          /* non-fatal */
+        }
+
+        const sellerMsg = {
+          to: seller.email,
+          from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+          subject: invoicePaidCopy.subject(invoice_number),
+          html: emailWrap(
+            `<h2 style="color:#0F1F3D;margin:0 0 12px;">${invoicePaidCopy.title}</h2>
+            <p style="color:#475569;">${invoicePaidCopy.body(buyerName, sellerFirstName)}</p>
+            <p style="color:#475569;margin-bottom:20px;">${sellerLanguage === "fr" ? "Votre prochaine étape est de livrer les biens ou services que vous avez promis. Une fois que l'acheteur confirme la réception, les fonds vous seront libérés directement." : "Your next step is to deliver the goods or service you promised. Once the buyer confirms receipt, the funds will be released directly to you."}</p>
+            ${emailTable([
+              ["Invoice Number", invoice_number],
+              [
+                sellerLanguage === "fr"
+                  ? "Montant en séquestre"
+                  : "Amount in Escrow",
+                `${payment.amount} XAF`,
+                "font-weight:700;color:#16a34a;font-size:15px;",
+              ],
+              [sellerLanguage === "fr" ? "Acheteur" : "Buyer", buyerName],
+              [
+                sellerLanguage === "fr" ? "Statut du séquestre" : "Escrow Status",
+                sellerLanguage === "fr"
+                  ? "&#10003;&nbsp;Fonds sécurisés"
+                  : "&#10003;&nbsp;Funds Secured",
+                "color:#16a34a;font-weight:600;",
+              ],
+            ])}
+            <h3 style="color:#0F1F3D;margin:24px 0 8px;">${invoicePaidCopy.nextTitle}</h3>
+            <ol style="color:#475569;padding-left:20px;margin:0 0 20px;line-height:1.8;">
+              <li>${invoicePaidCopy.nextStep1}</li>
+              <li>${invoicePaidCopy.nextStep2}</li>
+              <li>${invoicePaidCopy.nextStep3}</li>
+            </ol>
+            ${emailButton(sellerChatLink, invoicePaidCopy.button)}
+            ${emailButton(sellerDashboardLink, sellerLanguage === "fr" ? "Aller au tableau de bord" : "Go to Dashboard")}
+            <p style="color:#94a3b8;font-size:13px;margin-top:20px;">${invoicePaidCopy.footer}</p>`,
+            {
+              footerNote:
+                sellerLanguage === "fr"
+                  ? "Vous avez reçu cet e-mail parce que l'une de vos factures Fonlok a été payée. Ne partagez vos identifiants de compte avec personne."
+                  : "You received this email because one of your Fonlok invoices was paid. Do not share your account credentials with anyone.",
+            },
+          ),
+        };
+        await sgMail.send(sellerMsg);
+        console.log("✅  Invoice-paid email sent to seller.");
+      }
+    } catch (sellerEmailErr) {
+      console.error(
+        "⚠️  Could not send invoice-paid email to seller:",
+        sellerEmailErr.response?.body ?? sellerEmailErr.message,
+      );
+    }
   }
 
   // ── Fire live API webhooks for third-party integrations (e.g. Njimbong) ──
