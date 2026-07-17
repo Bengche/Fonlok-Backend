@@ -808,7 +808,12 @@ app.listen(PORT, async () => {
   try {
     await db.query(`
       ALTER TABLE api_keys
-        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ DEFAULT NULL
+        ADD COLUMN IF NOT EXISTS approved_at      TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS company_name     VARCHAR(200) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS website_url      VARCHAR(500) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS use_case         TEXT         DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS rejected_at      TIMESTAMPTZ  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS rejection_reason TEXT         DEFAULT NULL
     `);
     // Auto-approve every key that was created before this gate was introduced.
     const { rowCount } = await db.query(`
@@ -821,9 +826,9 @@ app.listen(PORT, async () => {
         `api_keys approval gate: ${rowCount} existing key(s) auto-approved`,
       );
     }
-    logger.info("api_keys.approved_at column ready");
+    logger.info("api_keys approval gate columns ready");
   } catch (err) {
-    logger.warn("api_keys.approved_at migration failed", {
+    logger.warn("api_keys approval gate migration failed", {
       error: err.message,
     });
   }

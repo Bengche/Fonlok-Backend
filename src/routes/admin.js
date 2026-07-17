@@ -2726,8 +2726,12 @@ router.get("/live-keys", adminMiddleware, async (req, res) => {
   }
   try {
     const result = await db.query(`
-      SELECT k.id, k.user_id, k.key_prefix, k.label, k.request_count,
-             k.last_used_at, k.revoked_at, k.approved_at, k.created_at,
+      SELECT k.id, k.user_id, k.key_prefix, k.label,
+             k.company_name, k.website_url, k.use_case,
+             k.request_count, k.last_used_at,
+             k.revoked_at, k.approved_at,
+             k.rejected_at, k.rejection_reason,
+             k.created_at,
              u.email AS user_email, u.name AS user_name
       FROM api_keys k
       JOIN users u ON u.id = k.user_id
@@ -2806,6 +2810,80 @@ router.patch("/live-keys/:id/approve", adminMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Admin approve live key error:", err.message);
     return res.status(500).json({ message: "Failed to approve key." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /admin/live-keys/:id/reject — reject a pending live API key application
+// Sets rejected_at + revoked_at and emails the applicant with the reason.
+// Body: { reason?: string } (optional but recommended)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/live-keys/:id/reject", adminMiddleware, async (req, res) => {
+  const keyId = parseInt(req.params.id, 10);
+  if (!keyId || isNaN(keyId)) {
+    return res.status(400).json({ message: "Invalid key ID." });
+  }
+  const reason = String(req.body?.reason || "").trim().slice(0, 500) || null;
+  try {
+    const result = await db.query(
+      `UPDATE api_keys
+       SET rejected_at      = NOW(),
+           rejection_reason  = $2,
+           revoked_at        = NOW()
+       WHERE id = $1 AND revoked_at IS NULL AND approved_at IS NULL
+       RETURNING id, key_prefix, label, user_id`,
+      [keyId, reason],
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Key not found or already approved/revoked." });
+    }
+    const key = result.rows[0];
+    // Notify the applicant.
+    try {
+      const userResult = await db.query(
+        "SELECT email, name FROM users WHERE id = $1",
+        [key.user_id],
+      );
+      if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        await sgMail.send({
+          to: user.email,
+          from: { name: BRAND.name, email: BRAND.supportEmail },
+          replyTo: BRAND.supportEmail,
+          subject: "Update on your Fonlok live API key application",
+          html: emailWrap(`
+            <h2 style="margin:0 0 8px;color:#0f172a;font-size:22px;font-weight:800;">API key application update</h2>
+            <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+              Hi ${escapeHtml(user.name || "there")},<br/><br/>
+              After review, your application for a live API key
+              (${escapeHtml(key.key_prefix)}&hellip; — ${escapeHtml(key.label)})
+              was not approved at this time.
+            </p>
+            ${reason ? `<p style="margin:0 0 18px;color:#475569;line-height:1.7;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ""}
+            <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+              If you have questions or would like to reapply, please contact us at
+              <a href="mailto:${BRAND.supportEmail}" style="color:#2563eb;">${BRAND.supportEmail}</a>.
+            </p>
+          `),
+        });
+      }
+    } catch (emailErr) {
+      console.error(
+        "Failed to send API key rejection email:",
+        emailErr.message,
+      );
+    }
+    await auditLog(
+      "live_key_rejected",
+      key.user_id,
+      `key_id=${key.id} prefix=${key.key_prefix} reason=${reason || "none"}`,
+    );
+    return res.json({ message: "Key rejected.", key });
+  } catch (err) {
+    console.error("Admin reject live key error:", err.message);
+    return res.status(500).json({ message: "Failed to reject key." });
   }
 });
 
