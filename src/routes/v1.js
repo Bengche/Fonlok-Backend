@@ -8,10 +8,12 @@
  *
  * Routes:
  *   GET  /v1/ping                                  — health check
- *   POST /v1/invoices                              — create an escrow invoice
+ *   POST /v1/invoices                              — create a platform escrow invoice (no Fonlok account required for seller/buyer)
  *   GET  /v1/invoices/:invoice_id                  — get invoice by ID
- *   POST /v1/payments/initiate                     — trigger buyer MoMo prompt
+ *   POST /v1/payments/initiate                     — trigger buyer MoMo payment prompt
  *   GET  /v1/payments/:reference/status            — poll payment status
+ *   POST /v1/payments/release                      — release held funds to seller (triggers Campay payout + emails)
+ *   POST /v1/payments/dispute                      — flag a paid invoice as disputed (holds funds)
  *   POST /v1/webhooks/register                     — register a webhook endpoint
  *   GET  /v1/webhooks                              — list registered webhooks
  *   DELETE /v1/webhooks/:id                        — remove a webhook endpoint
@@ -33,6 +35,7 @@ import axios from "axios";
 import dns from "dns/promises";
 import net from "net";
 import dotenv from "dotenv";
+import sgMail from "@sendgrid/mail";
 import { body, param } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
@@ -40,6 +43,7 @@ import db from "../controllers/db.js";
 import logger from "../utils/logger.js";
 
 dotenv.config();
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const router = express.Router();
 
@@ -86,11 +90,17 @@ async function isSafeUrl(rawUrl) {
   const hostname = parsed.hostname.toLowerCase();
   const blockedNames = ["localhost", "0.0.0.0", "metadata.google.internal"];
   if (blockedNames.includes(hostname)) {
-    return { safe: false, reason: `'${hostname}' is not an allowed webhook URL.` };
+    return {
+      safe: false,
+      reason: `'${hostname}' is not an allowed webhook URL.`,
+    };
   }
   if (net.isIPv4(hostname) || net.isIPv6(hostname)) {
     if (PRIVATE_IP_PATTERNS.some((r) => r.test(hostname))) {
-      return { safe: false, reason: "Private IP addresses are not allowed as webhook URLs." };
+      return {
+        safe: false,
+        reason: "Private IP addresses are not allowed as webhook URLs.",
+      };
     }
     return { safe: true };
   }
@@ -98,11 +108,17 @@ async function isSafeUrl(rawUrl) {
     const addrs = await dns.lookup(hostname, { all: true });
     for (const { address } of addrs) {
       if (PRIVATE_IP_PATTERNS.some((r) => r.test(address))) {
-        return { safe: false, reason: `Webhook URL resolves to a private IP (${address}).` };
+        return {
+          safe: false,
+          reason: `Webhook URL resolves to a private IP (${address}).`,
+        };
       }
     }
   } catch {
-    return { safe: false, reason: "Could not resolve the webhook URL hostname." };
+    return {
+      safe: false,
+      reason: "Could not resolve the webhook URL hostname.",
+    };
   }
   return { safe: true };
 }
@@ -113,10 +129,10 @@ async function isSafeUrl(rawUrl) {
  * Algorithm: HMAC-SHA256(raw JSON body, webhook_secret)
  */
 function signWebhookPayload(rawBody, secret) {
-  return "sha256=" + crypto
-    .createHmac("sha256", secret)
-    .update(rawBody, "utf8")
-    .digest("hex");
+  return (
+    "sha256=" +
+    crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
+  );
 }
 
 /**
@@ -148,7 +164,11 @@ async function deliverWebhookEvent(userId, eventType, payload) {
           },
           validateStatus: () => true,
         });
-        logger.info("Webhook delivered", { hookId: hook.id, event: eventType, url: hook.url });
+        logger.info("Webhook delivered", {
+          hookId: hook.id,
+          event: eventType,
+          url: hook.url,
+        });
       } catch (err) {
         logger.warn("Webhook delivery failed", {
           hookId: hook.id,
@@ -171,16 +191,19 @@ router.get("/ping", (req, res) => {
     status: "ok",
     environment: "production",
     key_label: req.apiKey.label,
-    message: "Fonlok live API is operational. Real transactions will be processed.",
+    message:
+      "Fonlok live API is operational. Real transactions will be processed.",
     timestamp: new Date().toISOString(),
   });
 });
 
-// ── POST /v1/invoices — create a production escrow invoice ───────────────────
+// ── POST /v1/invoices — create a platform escrow invoice ────────────────────
 //
-// The invoice is created on behalf of the authenticated API key owner (the seller).
-// The seller must have a verified Fonlok account and a registered Mobile Money
-// phone number (required for payout when the buyer confirms delivery).
+// Creates an escrow invoice on behalf of any seller on your platform.
+// No Fonlok account is required for the seller or buyer — pass their
+// contact details directly. Funds are held by Fonlok until you call
+// POST /v1/payments/release, at which point Fonlok disburses net amount
+// (after 2% fee) to seller_phone and sends email receipts to both parties.
 router.post(
   "/invoices",
   [
@@ -200,11 +223,39 @@ router.post(
       .optional()
       .isIn(["XAF"])
       .withMessage("Only XAF is supported."),
+    body("seller_name")
+      .trim()
+      .notEmpty()
+      .withMessage("seller_name is required.")
+      .isLength({ max: 200 })
+      .withMessage("seller_name must be 200 characters or fewer.")
+      .escape(),
+    body("seller_email")
+      .notEmpty()
+      .withMessage("seller_email is required.")
+      .isEmail()
+      .withMessage("seller_email must be a valid email address.")
+      .normalizeEmail(),
+    body("seller_phone")
+      .trim()
+      .notEmpty()
+      .withMessage("seller_phone is required.")
+      .matches(/^237[62]\d{8}$/)
+      .withMessage(
+        "seller_phone must be a valid Cameroonian MoMo number (e.g. 237670000000).",
+      ),
     body("buyer_email")
       .optional({ checkFalsy: true })
       .isEmail()
       .withMessage("buyer_email must be a valid email address.")
       .normalizeEmail(),
+    body("buyer_phone")
+      .optional({ checkFalsy: true })
+      .trim()
+      .matches(/^237[62]\d{8}$/)
+      .withMessage(
+        "buyer_phone must be a valid Cameroonian MoMo number (e.g. 237670000000).",
+      ),
     body("description")
       .optional({ checkFalsy: true })
       .trim()
@@ -220,90 +271,82 @@ router.post(
     body("expires_at")
       .optional({ checkFalsy: true })
       .isISO8601()
-      .withMessage("expires_at must be a valid ISO 8601 date (e.g. 2026-12-31)."),
+      .withMessage(
+        "expires_at must be a valid ISO 8601 date (e.g. 2026-12-31).",
+      ),
   ],
   validate,
   async (req, res) => {
-    const sellerId = req.apiKey.user_id;
+    const platformUserId = req.apiKey.user_id; // Njimbong's Fonlok account
     const {
       title,
       amount,
       currency = "XAF",
+      seller_name,
+      seller_email,
+      seller_phone,
       buyer_email = null,
+      buyer_phone = null,
       description = null,
       reference = null,
       expires_at = null,
     } = req.body;
 
     try {
-      // Verify the seller account exists and has a phone number for payout.
-      const sellerResult = await db.query(
-        `SELECT id, email, phone FROM users WHERE id = $1`,
-        [sellerId],
-      );
-      if (sellerResult.rows.length === 0) {
-        return res.status(403).json({
-          error: "account_not_found",
-          message: "The Fonlok account associated with this API key no longer exists.",
-        });
-      }
-      const seller = sellerResult.rows[0];
-      if (!seller.phone) {
-        return res.status(403).json({
-          error: "no_payout_number",
-          message:
-            "Your Fonlok account does not have a Mobile Money number set. Add one in your profile before creating live invoices.",
-        });
-      }
-
-      // Ensure external reference is unique per seller if provided.
+      // Ensure external reference is unique per API key owner if provided.
       if (reference) {
         const dupCheck = await db.query(
           `SELECT 1 FROM invoices WHERE userid = $1 AND external_reference = $2 LIMIT 1`,
-          [sellerId, reference],
+          [platformUserId, reference],
         );
         if (dupCheck.rows.length > 0) {
           return res.status(409).json({
             error: "duplicate_reference",
-            message: `An invoice with reference '${reference}' already exists for your account.`,
+            message: `An invoice with reference '${reference}' already exists.`,
           });
         }
       }
 
-      const invoiceNumber = `${sellerId}-${crypto.randomBytes(6).toString("hex")}`;
+      const invoiceNumber = `${platformUserId}-${crypto.randomBytes(6).toString("hex")}`;
       const invoiceLink = `${process.env.FRONTEND_URL}/pay/${invoiceNumber}`;
 
       const result = await db.query(
         `INSERT INTO invoices
            (invoicename, clientemail, currency, amount, invoicenumber, userid,
             invoicelink, description, expires_at, payment_type, external_reference,
-            created_via_api)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'full', $10, true)
+            created_via_api, seller_name, seller_email, seller_phone, buyer_phone)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'full', $10, true, $11, $12, $13, $14)
          RETURNING id, invoicenumber, invoicename, clientemail, currency, amount,
                    invoicelink, description, expires_at, external_reference,
-                   status, createdat AS created_at`,
+                   status, seller_name, seller_email, seller_phone, buyer_phone,
+                   createdat AS created_at`,
         [
           title,
-          buyer_email || seller.email,
+          buyer_email || seller_email,
           currency,
           parseFloat(amount),
           invoiceNumber,
-          sellerId,
+          platformUserId,
           invoiceLink,
           description,
           expires_at || null,
           reference || null,
+          seller_name,
+          seller_email,
+          seller_phone,
+          buyer_phone,
         ],
       );
 
       const inv = result.rows[0];
 
-      logger.info("Production invoice created via API", {
+      logger.info("Platform invoice created via API", {
         invoiceId: inv.id,
         invoiceNumber: inv.invoicenumber,
-        userId: sellerId,
+        platformUserId,
         keyId: req.apiKey.id,
         amount: inv.amount,
+        sellerPhone: inv.seller_phone,
       });
 
       return res.status(201).json({
@@ -313,8 +356,13 @@ router.post(
         description: inv.description,
         amount: parseFloat(inv.amount),
         currency: inv.currency,
-        seller_id: sellerId,
+        seller: {
+          name: inv.seller_name,
+          email: inv.seller_email,
+          phone: inv.seller_phone,
+        },
         buyer_email: inv.clientemail,
+        buyer_phone: inv.buyer_phone,
         status: inv.status,
         payment_url: inv.invoicelink,
         external_reference: inv.external_reference,
@@ -322,9 +370,9 @@ router.post(
         created_at: inv.created_at,
       });
     } catch (err) {
-      logger.error("Failed to create production invoice via API", {
+      logger.error("Failed to create platform invoice via API", {
         error: err.message,
-        userId: sellerId,
+        platformUserId,
         keyId: req.apiKey.id,
       });
       return res.status(500).json({
@@ -338,7 +386,12 @@ router.post(
 // ── GET /v1/invoices/:invoice_id ─────────────────────────────────────────────
 router.get(
   "/invoices/:invoice_id",
-  [param("invoice_id").trim().notEmpty().withMessage("invoice_id is required.")],
+  [
+    param("invoice_id")
+      .trim()
+      .notEmpty()
+      .withMessage("invoice_id is required."),
+  ],
   validate,
   async (req, res) => {
     const sellerId = req.apiKey.user_id;
@@ -348,7 +401,8 @@ router.get(
       const result = await db.query(
         `SELECT id, invoicenumber, invoicename, clientemail, currency, amount,
                 invoicelink, description, expires_at, external_reference,
-                status, created_at, paid_at, delivered_at
+                status, seller_name, seller_email, seller_phone, buyer_phone,
+                createdat AS created_at, paidat AS paid_at, deliveredat AS delivered_at
          FROM invoices
          WHERE invoicenumber = $1 AND userid = $2`,
         [invoice_id, sellerId],
@@ -369,8 +423,15 @@ router.get(
         description: inv.description,
         amount: parseFloat(inv.amount),
         currency: inv.currency,
-        seller_id: sellerId,
+        seller: inv.seller_name
+          ? {
+              name: inv.seller_name,
+              email: inv.seller_email,
+              phone: inv.seller_phone,
+            }
+          : null,
         buyer_email: inv.clientemail,
+        buyer_phone: inv.buyer_phone,
         status: inv.status,
         payment_url: inv.invoicelink,
         external_reference: inv.external_reference,
@@ -403,10 +464,7 @@ router.get(
 router.post(
   "/payments/initiate",
   [
-    body("invoice_id")
-      .trim()
-      .notEmpty()
-      .withMessage("invoice_id is required."),
+    body("invoice_id").trim().notEmpty().withMessage("invoice_id is required."),
     body("phone_number")
       .trim()
       .matches(/^237[62]\d{8}$/)
@@ -452,7 +510,8 @@ router.post(
       if (inv.amount < 500) {
         return res.status(400).json({
           error: "amount_too_low",
-          message: "Invoice amount must be at least 500 XAF to initiate a payment.",
+          message:
+            "Invoice amount must be at least 500 XAF to initiate a payment.",
         });
       }
 
@@ -492,17 +551,19 @@ router.post(
         campayToken = authRes.data.token;
       } catch (campayAuthErr) {
         // Roll back the payments row so this payment UUID can be retried cleanly.
-        await db.query(
-          `DELETE FROM payments WHERE providerpaymentid = $1`,
-          [paymentUUID],
-        ).catch(() => {});
+        await db
+          .query(`DELETE FROM payments WHERE providerpaymentid = $1`, [
+            paymentUUID,
+          ])
+          .catch(() => {});
         logger.error("Campay auth failed during API payment initiation", {
           error: campayAuthErr.message,
           invoiceNumber: inv.invoicenumber,
         });
         return res.status(502).json({
           error: "payment_gateway_error",
-          message: "Could not connect to the payment gateway. Please try again.",
+          message:
+            "Could not connect to the payment gateway. Please try again.",
         });
       }
 
@@ -524,10 +585,11 @@ router.post(
         );
       } catch (campayErr) {
         // Roll back the payments row on Campay failure too.
-        await db.query(
-          `DELETE FROM payments WHERE providerpaymentid = $1`,
-          [paymentUUID],
-        ).catch(() => {});
+        await db
+          .query(`DELETE FROM payments WHERE providerpaymentid = $1`, [
+            paymentUUID,
+          ])
+          .catch(() => {});
         logger.error("Campay collect failed during API payment initiation", {
           error: campayErr.message,
           invoiceNumber: inv.invoicenumber,
@@ -548,7 +610,9 @@ router.post(
           `UPDATE payments SET campay_reference = $1 WHERE providerpaymentid = $2`,
           [campayRef, paymentUUID],
         ).catch((e) =>
-          logger.warn("Failed to persist campay_reference", { error: e.message }),
+          logger.warn("Failed to persist campay_reference", {
+            error: e.message,
+          }),
         );
       }
 
@@ -654,15 +718,349 @@ router.get(
         amount: parseFloat(row.amount),
         currency: row.currency,
         provider: row.provider,
-        status: row.status,             // "pending" | "paid" | "failed"
+        status: row.status, // "pending" | "paid" | "failed"
         invoice_status: row.invoice_status, // "pending" | "paid" | "delivered" | "completed" | "disputed" | "cancelled"
         created_at: row.created_at,
       });
     } catch (err) {
-      logger.error("Failed to fetch payment status via API", { error: err.message });
+      logger.error("Failed to fetch payment status via API", {
+        error: err.message,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to retrieve payment status.",
+      });
+    }
+  },
+);
+
+// ── POST /v1/payments/release — release held funds to seller ─────────────────
+//
+// Call this after the buyer confirms receipt of goods/service.
+// Fonlok will:
+//   1. Deduct the 2% platform fee
+//   2. Disburse the net amount to seller_phone via Campay MoMo
+//   3. Send email confirmations to both seller and buyer
+//   4. Fire a payment.released webhook event to your registered endpoint
+//
+// Only invoices in 'paid' status (funds held) can be released.
+// This operation is atomic — concurrent calls for the same invoice are safe.
+router.post(
+  "/payments/release",
+  [
+    body("invoice_id")
+      .trim()
+      .notEmpty()
+      .withMessage("invoice_id is required."),
+  ],
+  validate,
+  async (req, res) => {
+    const platformUserId = req.apiKey.user_id;
+    const { invoice_id } = req.body;
+
+    try {
+      // Atomic claim: UPDATE only succeeds when status = 'paid'.
+      // Concurrent calls will find status already 'completed' and get 0 rows.
+      const claimResult = await db.query(
+        `UPDATE invoices
+         SET status = 'completed'
+         WHERE invoicenumber = $1
+           AND userid        = $2
+           AND status        = 'paid'
+           AND created_via_api = true
+         RETURNING id, invoicenumber, invoicename, amount, currency,
+                   clientemail, seller_name, seller_email, seller_phone`,
+        [invoice_id, platformUserId],
+      );
+
+      if (claimResult.rows.length === 0) {
+        // Distinguish not-found from wrong-status for a clear error message.
+        const checkResult = await db.query(
+          `SELECT status FROM invoices
+           WHERE invoicenumber = $1 AND userid = $2 AND created_via_api = true`,
+          [invoice_id, platformUserId],
+        );
+        if (checkResult.rows.length === 0) {
+          return res.status(404).json({
+            error: "invoice_not_found",
+            message: `No API invoice found with id '${invoice_id}'.`,
+          });
+        }
+        const currentStatus = checkResult.rows[0].status;
+        return res.status(409).json({
+          error: "invalid_invoice_status",
+          message: `Cannot release an invoice with status '${currentStatus}'. Only 'paid' invoices can be released.`,
+        });
+      }
+
+      const inv = claimResult.rows[0];
+      const grossAmount = parseFloat(inv.amount);
+      const TOTAL_FEE_RATE = 0.02; // 2% platform fee
+      const platformFee = Math.floor(grossAmount * TOTAL_FEE_RATE);
+      const sellerReceives = grossAmount - platformFee;
+
+      // Authenticate with Campay.
+      let campayToken;
+      try {
+        const authRes = await axios.post(
+          `${process.env.CAMPAY_BASE_URL}token/`,
+          {
+            username: process.env.CAMPAY_USERNAME,
+            password: process.env.CAMPAY_PASSWORD,
+          },
+          { timeout: 10000 },
+        );
+        campayToken = authRes.data.token;
+      } catch (campayAuthErr) {
+        // Rollback — restore 'paid' so release can be retried.
+        await db
+          .query(`UPDATE invoices SET status = 'paid' WHERE id = $1`, [inv.id])
+          .catch(() => {});
+        logger.error("Campay auth failed during API release", {
+          error: campayAuthErr.message,
+          invoiceNumber: inv.invoicenumber,
+        });
+        return res.status(502).json({
+          error: "payment_gateway_error",
+          message:
+            "Could not connect to the payment gateway. Please try again.",
+        });
+      }
+
+      // Disburse to seller's MoMo.
+      try {
+        await axios.post(
+          `${process.env.CAMPAY_BASE_URL}withdraw/`,
+          {
+            amount: String(sellerReceives),
+            currency: inv.currency,
+            to: inv.seller_phone,
+            description: `Fonlok payout: ${inv.invoicename}`,
+            external_reference: inv.invoicenumber,
+          },
+          {
+            headers: { Authorization: `Token ${campayToken}` },
+            timeout: 15000,
+          },
+        );
+      } catch (campayErr) {
+        // Rollback status on Campay failure.
+        await db
+          .query(`UPDATE invoices SET status = 'paid' WHERE id = $1`, [inv.id])
+          .catch(() => {});
+        logger.error("Campay withdraw failed during API release", {
+          error: campayErr.message,
+          invoiceNumber: inv.invoicenumber,
+        });
+        return res.status(502).json({
+          error: "payment_gateway_error",
+          message:
+            "Payout to seller failed. The invoice status has been restored. Please try again.",
+        });
+      }
+
+      // Record payout row for audit trail.
+      await db
+        .query(
+          `INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number)
+           VALUES ($1, $2, 'Mobile Money', 'paid', $3, $4)`,
+          [platformUserId, sellerReceives, inv.id, inv.invoicenumber],
+        )
+        .catch((e) =>
+          logger.warn("Failed to record payout row", { error: e.message }),
+        );
+
+      logger.info("API payment released", {
+        invoiceNumber: inv.invoicenumber,
+        sellerPhone: inv.seller_phone,
+        sellerReceives,
+        platformFee,
+        keyId: req.apiKey.id,
+      });
+
+      // Email to seller.
+      if (inv.seller_email) {
+        sgMail
+          .send({
+            to: inv.seller_email,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: `Payment received — ${inv.invoicename}`,
+            html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px 24px;color:#1e293b;">
+  <h2 style="color:#0F1F3D;margin:0 0 16px;">You received a payment</h2>
+  <p>Hi ${inv.seller_name || "there"},</p>
+  <p style="margin-top:12px;">Your funds for <strong>${inv.invoicename}</strong> have been released. <strong>${sellerReceives.toLocaleString()} XAF</strong> has been sent to your MoMo number ending in <strong>···${inv.seller_phone.slice(-4)}</strong>.</p>
+  <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Item</td><td style="padding:10px 0;text-align:right;font-weight:600;">${inv.invoicename}</td></tr>
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Gross amount</td><td style="padding:10px 0;text-align:right;">${grossAmount.toLocaleString()} XAF</td></tr>
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Platform fee (2%)</td><td style="padding:10px 0;text-align:right;">− ${platformFee.toLocaleString()} XAF</td></tr>
+    <tr><td style="padding:10px 0;color:#0F1F3D;font-weight:700;">You received</td><td style="padding:10px 0;text-align:right;font-weight:700;color:#16a34a;">${sellerReceives.toLocaleString()} XAF</td></tr>
+  </table>
+  <p style="color:#64748b;font-size:13px;">Reference: ${inv.invoicenumber}</p>
+  <p style="color:#64748b;font-size:13px;margin-top:24px;">Powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a></p>
+</div>`,
+          })
+          .catch((e) =>
+            logger.warn("Seller release email failed", { error: e.message }),
+          );
+      }
+
+      // Email to buyer.
+      if (inv.clientemail) {
+        sgMail
+          .send({
+            to: inv.clientemail,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: `Funds released — ${inv.invoicename}`,
+            html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px 24px;color:#1e293b;">
+  <h2 style="color:#0F1F3D;margin:0 0 16px;">Funds released</h2>
+  <p>Your payment of <strong>${grossAmount.toLocaleString()} XAF</strong> for <strong>${inv.invoicename}</strong> has been released to the seller.</p>
+  <p style="margin-top:12px;">Your transaction is now complete. Thank you for using the escrow service.</p>
+  <p style="color:#64748b;font-size:13px;margin-top:24px;">Reference: ${inv.invoicenumber}</p>
+  <p style="color:#64748b;font-size:13px;">Powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a></p>
+</div>`,
+          })
+          .catch((e) =>
+            logger.warn("Buyer release email failed", { error: e.message }),
+          );
+      }
+
+      // Fire webhook — never block the response.
+      deliverWebhookEvent(platformUserId, "payment.released", {
+        object: "event",
+        type: "payment.released",
+        invoice_id: inv.invoicenumber,
+        seller_phone: inv.seller_phone,
+        seller_email: inv.seller_email,
+        gross_amount: grossAmount,
+        platform_fee: platformFee,
+        seller_receives: sellerReceives,
+        currency: inv.currency,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
+      return res.json({
+        object: "release",
+        invoice_id: inv.invoicenumber,
+        status: "completed",
+        gross_amount: grossAmount,
+        platform_fee: platformFee,
+        seller_receives: sellerReceives,
+        currency: inv.currency,
+        seller_phone: inv.seller_phone,
+        message: `${sellerReceives.toLocaleString()} XAF dispatched to ${inv.seller_phone} via Mobile Money.`,
+        released_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.error("Unexpected error during API payment release", {
+        error: err.message,
+        stack: err.stack,
+        keyId: req.apiKey.id,
+      });
+      return res.status(500).json({
+        error: "server_error",
+        message: "An unexpected error occurred during release. Please try again.",
+      });
+    }
+  },
+);
+
+// ── POST /v1/payments/dispute — flag a paid invoice as disputed ──────────────
+//
+// Call this when the buyer raises a complaint before funds are released.
+// Fonlok will hold the payment and fire a payment.disputed webhook event.
+// Once disputed, funds cannot be released via the API until support resolves it.
+// Contact support@fonlok.com with the invoice_id to initiate resolution.
+//
+// Only 'paid' invoices created via the API can be disputed here.
+router.post(
+  "/payments/dispute",
+  [
+    body("invoice_id")
+      .trim()
+      .notEmpty()
+      .withMessage("invoice_id is required."),
+    body("reason")
+      .trim()
+      .notEmpty()
+      .withMessage("reason is required.")
+      .isLength({ max: 1000 })
+      .withMessage("reason must be 1000 characters or fewer.")
+      .escape(),
+  ],
+  validate,
+  async (req, res) => {
+    const platformUserId = req.apiKey.user_id;
+    const { invoice_id, reason } = req.body;
+
+    try {
+      // Atomic status change — only succeeds if invoice is currently 'paid'.
+      const claimResult = await db.query(
+        `UPDATE invoices
+         SET status = 'disputed'
+         WHERE invoicenumber = $1
+           AND userid        = $2
+           AND status        = 'paid'
+           AND created_via_api = true
+         RETURNING id, invoicenumber, invoicename, amount, currency,
+                   clientemail, seller_name, seller_email, seller_phone`,
+        [invoice_id, platformUserId],
+      );
+
+      if (claimResult.rows.length === 0) {
+        const checkResult = await db.query(
+          `SELECT status FROM invoices
+           WHERE invoicenumber = $1 AND userid = $2 AND created_via_api = true`,
+          [invoice_id, platformUserId],
+        );
+        if (checkResult.rows.length === 0) {
+          return res.status(404).json({
+            error: "invoice_not_found",
+            message: `No API invoice found with id '${invoice_id}'.`,
+          });
+        }
+        const currentStatus = checkResult.rows[0].status;
+        return res.status(409).json({
+          error: "invalid_invoice_status",
+          message: `Cannot dispute an invoice with status '${currentStatus}'. Only 'paid' invoices can be disputed.`,
+        });
+      }
+
+      const inv = claimResult.rows[0];
+
+      logger.info("API invoice disputed", {
+        invoiceNumber: inv.invoicenumber,
+        reason,
+        keyId: req.apiKey.id,
+      });
+
+      // Fire webhook.
+      deliverWebhookEvent(platformUserId, "payment.disputed", {
+        object: "event",
+        type: "payment.disputed",
+        invoice_id: inv.invoicenumber,
+        amount: parseFloat(inv.amount),
+        currency: inv.currency,
+        reason,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
+      return res.json({
+        object: "dispute",
+        invoice_id: inv.invoicenumber,
+        status: "disputed",
+        reason,
+        message:
+          "Invoice flagged as disputed. Funds are held. Contact support@fonlok.com with the invoice_id to resolve.",
+        disputed_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.error("Unexpected error during API dispute", {
+        error: err.message,
+        keyId: req.apiKey.id,
+      });
+      return res.status(500).json({
+        error: "server_error",
+        message: "An unexpected error occurred. Please try again.",
       });
     }
   },
@@ -709,14 +1107,18 @@ router.post(
     if (parseInt(countResult.rows[0].cnt, 10) >= 5) {
       return res.status(429).json({
         error: "webhook_limit_reached",
-        message: "You already have 5 active webhook endpoints. Remove one before adding another.",
+        message:
+          "You already have 5 active webhook endpoints. Remove one before adding another.",
       });
     }
 
     // Generate a strong per-webhook signing secret (shown only once).
     const webhookSecret = "whsec_" + crypto.randomBytes(32).toString("hex");
     // Store a hash — the raw secret must never be in the DB.
-    const secretHash = crypto.createHash("sha256").update(webhookSecret).digest("hex");
+    const secretHash = crypto
+      .createHash("sha256")
+      .update(webhookSecret)
+      .digest("hex");
 
     try {
       const result = await db.query(
@@ -734,10 +1136,14 @@ router.post(
         label: hook.label,
         secret: webhookSecret, // Shown ONCE. Store it immediately.
         created_at: hook.created_at,
-        _note: "Store the secret securely. It will not be shown again. Use it to verify X-Fonlok-Signature on incoming events.",
+        _note:
+          "Store the secret securely. It will not be shown again. Use it to verify X-Fonlok-Signature on incoming events.",
       });
     } catch (err) {
-      logger.error("Failed to register webhook", { error: err.message, userId });
+      logger.error("Failed to register webhook", {
+        error: err.message,
+        userId,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to register webhook.",
@@ -773,11 +1179,7 @@ router.get("/webhooks", async (req, res) => {
 // ── DELETE /v1/webhooks/:id ───────────────────────────────────────────────────
 router.delete(
   "/webhooks/:id",
-  [
-    param("id")
-      .isInt({ min: 1 })
-      .withMessage("id must be a positive integer."),
-  ],
+  [param("id").isInt({ min: 1 }).withMessage("id must be a positive integer.")],
   validate,
   async (req, res) => {
     const userId = req.apiKey.user_id;
@@ -797,7 +1199,12 @@ router.delete(
           message: `No webhook found with id ${hookId} on your account.`,
         });
       }
-      return res.json({ object: "webhook", id: hookId, active: false, deleted: true });
+      return res.json({
+        object: "webhook",
+        id: hookId,
+        active: false,
+        deleted: true,
+      });
     } catch (err) {
       logger.error("Failed to delete webhook", { error: err.message });
       return res.status(500).json({

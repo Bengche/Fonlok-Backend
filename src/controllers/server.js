@@ -782,4 +782,22 @@ app.listen(PORT, async () => {
       error: err.message,
     });
   }
+
+  // Add seller/buyer contact columns to invoices for the platform API model.
+  // These allow third-party platforms (e.g. Njimbong) to pass seller and buyer
+  // details directly — no Fonlok account required for either party.
+  try {
+    await db.query(`
+      ALTER TABLE invoices
+        ADD COLUMN IF NOT EXISTS seller_name  VARCHAR(200) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS seller_email VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS seller_phone VARCHAR(20)  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS buyer_phone  VARCHAR(20)  DEFAULT NULL
+    `);
+    logger.info("invoices seller/buyer contact columns ready");
+  } catch (err) {
+    logger.warn("invoices seller/buyer columns migration failed", {
+      error: err.message,
+    });
+  }
 });
