@@ -747,12 +747,7 @@ router.get(
 // This operation is atomic — concurrent calls for the same invoice are safe.
 router.post(
   "/payments/release",
-  [
-    body("invoice_id")
-      .trim()
-      .notEmpty()
-      .withMessage("invoice_id is required."),
-  ],
+  [body("invoice_id").trim().notEmpty().withMessage("invoice_id is required.")],
   validate,
   async (req, res) => {
     const platformUserId = req.apiKey.user_id;
@@ -958,7 +953,8 @@ router.post(
       });
       return res.status(500).json({
         error: "server_error",
-        message: "An unexpected error occurred during release. Please try again.",
+        message:
+          "An unexpected error occurred during release. Please try again.",
       });
     }
   },
@@ -975,10 +971,7 @@ router.post(
 router.post(
   "/payments/dispute",
   [
-    body("invoice_id")
-      .trim()
-      .notEmpty()
-      .withMessage("invoice_id is required."),
+    body("invoice_id").trim().notEmpty().withMessage("invoice_id is required."),
     body("reason")
       .trim()
       .notEmpty()
