@@ -778,6 +778,8 @@ app.listen(PORT, async () => {
     `);
     logger.info("invoices.external_reference + created_via_api columns ready");
   } catch (err) {
-    logger.warn("invoices API columns migration failed", { error: err.message });
+    logger.warn("invoices API columns migration failed", {
+      error: err.message,
+    });
   }
 });

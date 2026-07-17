@@ -238,7 +238,7 @@ router.post(
     try {
       // Verify the seller account exists and has a phone number for payout.
       const sellerResult = await db.query(
-        `SELECT id, email, phone, is_verified FROM users WHERE id = $1`,
+        `SELECT id, email, phone FROM users WHERE id = $1`,
         [sellerId],
       );
       if (sellerResult.rows.length === 0) {

@@ -78,8 +78,13 @@ router.post(
         _note: "Store this key securely. It will not be shown again.",
       });
     } catch (err) {
-      logger.error("Failed to create live API key", { error: err.message, userId });
-      return res.status(500).json({ error: "server_error", message: "Failed to create key." });
+      logger.error("Failed to create live API key", {
+        error: err.message,
+        userId,
+      });
+      return res
+        .status(500)
+        .json({ error: "server_error", message: "Failed to create key." });
     }
   },
 );
@@ -99,7 +104,9 @@ router.get("/live-keys", async (req, res) => {
     return res.json({ data: result.rows });
   } catch (err) {
     logger.error("Failed to list live API keys", { error: err.message });
-    return res.status(500).json({ error: "server_error", message: "Failed to retrieve keys." });
+    return res
+      .status(500)
+      .json({ error: "server_error", message: "Failed to retrieve keys." });
   }
 });
 
@@ -130,7 +137,9 @@ router.delete(
       return res.json({ id: keyId, revoked: true });
     } catch (err) {
       logger.error("Failed to revoke live API key", { error: err.message });
-      return res.status(500).json({ error: "server_error", message: "Failed to revoke key." });
+      return res
+        .status(500)
+        .json({ error: "server_error", message: "Failed to revoke key." });
     }
   },
 );
