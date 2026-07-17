@@ -2708,4 +2708,139 @@ router.post(
   },
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/live-keys?status=pending|approved|revoked|all
+// Lists live API keys so the admin can see what is pending approval.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/live-keys", adminMiddleware, async (req, res) => {
+  const status = req.query.status || "pending";
+  let whereClause;
+  if (status === "pending") {
+    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NULL";
+  } else if (status === "approved") {
+    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL";
+  } else if (status === "revoked") {
+    whereClause = "WHERE k.revoked_at IS NOT NULL";
+  } else {
+    whereClause = "";
+  }
+  try {
+    const result = await db.query(`
+      SELECT k.id, k.user_id, k.key_prefix, k.label, k.request_count,
+             k.last_used_at, k.revoked_at, k.approved_at, k.created_at,
+             u.email AS user_email, u.name AS user_name
+      FROM api_keys k
+      JOIN users u ON u.id = k.user_id
+      ${whereClause}
+      ORDER BY k.created_at DESC
+      LIMIT 200
+    `);
+    return res.json({ keys: result.rows });
+  } catch (err) {
+    console.error("Admin list live keys error:", err.message);
+    return res.status(500).json({ message: "Failed to fetch live keys." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /admin/live-keys/:id/approve — approve a pending live API key
+// Sets approved_at = NOW() and emails the key owner.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/live-keys/:id/approve", adminMiddleware, async (req, res) => {
+  const keyId = parseInt(req.params.id, 10);
+  if (!keyId || isNaN(keyId)) {
+    return res.status(400).json({ message: "Invalid key ID." });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE api_keys
+       SET approved_at = NOW()
+       WHERE id = $1 AND revoked_at IS NULL AND approved_at IS NULL
+       RETURNING id, key_prefix, label, approved_at, user_id`,
+      [keyId],
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Key not found or already approved/revoked." });
+    }
+    const key = result.rows[0];
+    // Notify the key owner.
+    try {
+      const userResult = await db.query(
+        "SELECT email, name FROM users WHERE id = $1",
+        [key.user_id],
+      );
+      if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        const appUrl =
+          process.env.NEXT_PUBLIC_APP_URL || "https://fonlok.com";
+        await sgMail.send({
+          to: user.email,
+          from: { name: BRAND.name, email: BRAND.supportEmail },
+          subject: "Your Fonlok live API key has been approved",
+          html: emailWrap(`
+            <h2 style="margin:0 0 8px;color:#0f172a;font-size:22px;font-weight:800;">API key approved</h2>
+            <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+              Hi ${escapeHtml(user.name || "there")},<br/><br/>
+              Your Fonlok live API key <strong>${escapeHtml(key.key_prefix)}&hellip;</strong>
+              (${escapeHtml(key.label)}) has been approved and is now active.
+            </p>
+            <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+              You can start making live API calls immediately. A 2% platform fee
+              applies to each payment released via the API.
+            </p>
+            ${emailButton("View Developer Dashboard", appUrl + "/developers")}
+          `),
+        });
+      }
+    } catch (emailErr) {
+      console.error("Failed to send API key approval email:", emailErr.message);
+    }
+    await auditLog(
+      "live_key_approved",
+      key.user_id,
+      `key_id=${key.id} prefix=${key.key_prefix}`,
+    );
+    return res.json({ message: "Key approved.", key });
+  } catch (err) {
+    console.error("Admin approve live key error:", err.message);
+    return res.status(500).json({ message: "Failed to approve key." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /admin/live-keys/:id — admin-revoke a live API key
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete("/live-keys/:id", adminMiddleware, async (req, res) => {
+  const keyId = parseInt(req.params.id, 10);
+  if (!keyId || isNaN(keyId)) {
+    return res.status(400).json({ message: "Invalid key ID." });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE api_keys
+       SET revoked_at = NOW()
+       WHERE id = $1 AND revoked_at IS NULL
+       RETURNING id, key_prefix, label, user_id`,
+      [keyId],
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Key not found or already revoked." });
+    }
+    const key = result.rows[0];
+    await auditLog(
+      "live_key_revoked_admin",
+      key.user_id,
+      `key_id=${key.id} prefix=${key.key_prefix}`,
+    );
+    return res.json({ message: "Key revoked.", key });
+  } catch (err) {
+    console.error("Admin revoke live key error:", err.message);
+    return res.status(500).json({ message: "Failed to revoke key." });
+  }
+});
+
 export default router;

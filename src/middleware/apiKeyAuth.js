@@ -46,7 +46,7 @@ export async function apiKeyAuth(req, res, next) {
 
   try {
     const result = await db.query(
-      `SELECT id, user_id, label, revoked_at
+      `SELECT id, user_id, label, revoked_at, approved_at
        FROM api_keys
        WHERE key_hash = $1`,
       [keyHash],
@@ -66,6 +66,14 @@ export async function apiKeyAuth(req, res, next) {
         error: "revoked_api_key",
         message:
           "This API key has been revoked. Create a new one in the Fonlok Developer dashboard.",
+      });
+    }
+
+    if (!row.approved_at) {
+      return res.status(403).json({
+        error: "pending_approval",
+        message:
+          "Your API key is pending approval. You will be notified at the email on your Fonlok account once it is activated.",
       });
     }
 
