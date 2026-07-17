@@ -95,7 +95,15 @@ router.post(
            (user_id, key_prefix, key_hash, label, company_name, website_url, use_case)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, key_prefix, label, created_at`,
-        [userId, keyPrefix, keyHash, label, company_name, website_url, use_case],
+        [
+          userId,
+          keyPrefix,
+          keyHash,
+          label,
+          company_name,
+          website_url,
+          use_case,
+        ],
       );
 
       const row = result.rows[0];

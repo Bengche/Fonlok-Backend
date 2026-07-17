@@ -2777,8 +2777,7 @@ router.patch("/live-keys/:id/approve", adminMiddleware, async (req, res) => {
       );
       if (userResult.rows.length > 0) {
         const user = userResult.rows[0];
-        const appUrl =
-          process.env.NEXT_PUBLIC_APP_URL || "https://fonlok.com";
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://fonlok.com";
         await sgMail.send({
           to: user.email,
           from: { name: BRAND.name, email: BRAND.supportEmail },
@@ -2823,7 +2822,10 @@ router.patch("/live-keys/:id/reject", adminMiddleware, async (req, res) => {
   if (!keyId || isNaN(keyId)) {
     return res.status(400).json({ message: "Invalid key ID." });
   }
-  const reason = String(req.body?.reason || "").trim().slice(0, 500) || null;
+  const reason =
+    String(req.body?.reason || "")
+      .trim()
+      .slice(0, 500) || null;
   try {
     const result = await db.query(
       `UPDATE api_keys
