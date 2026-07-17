@@ -281,7 +281,7 @@ router.post(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'full', $10, true)
          RETURNING id, invoicenumber, invoicename, clientemail, currency, amount,
                    invoicelink, description, expires_at, external_reference,
-                   status, created_at`,
+                   status, createdat AS created_at`,
         [
           title,
           buyer_email || seller.email,
