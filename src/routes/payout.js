@@ -151,6 +151,15 @@ const executePayout = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
+  // ── Effective payout details ──────────────────────────────────────────────
+  // For API-created invoices (e.g. Njimbong) money and emails must go to the
+  // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
+  // account (invoiceUser). For native invoices invoiceUser IS the seller.
+  const isApiInvoice = !!(invoiceRow.created_via_api && invoiceRow.seller_phone);
+  const payoutPhone = isApiInvoice ? invoiceRow.seller_phone : invoiceUser.phone;
+  const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
+  const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
+
   // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Check for a referrer BEFORE computing fees so the correct split is used.
   const referrerCheck = await db.query(
@@ -188,7 +197,7 @@ const executePayout = async (invoiceId) => {
     {
       amount: sellerReceives.toString(),
       currency: "XAF",
-      to: invoiceUser.phone,
+      to: payoutPhone,
       description: `Fonlok payout for invoice ${invoiceRow.invoicenumber}`,
       external_reference: invoiceRow.invoicenumber,
     },
@@ -215,13 +224,16 @@ const executePayout = async (invoiceId) => {
   ]);
 
   // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  notifyUser(
-    sellerId,
-    "payout_sent",
-    "Payout Sent",
-    `${sellerReceives} XAF has been sent to your Mobile Money account for invoice ${invoiceRow.invoicenumber}.`,
-    { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
-  );
+  // Skip for API invoices: the actual seller is a third party (not Njimbong).
+  if (!isApiInvoice) {
+    notifyUser(
+      sellerId,
+      "payout_sent",
+      "Payout Sent",
+      `${sellerReceives} XAF has been sent to your Mobile Money account for invoice ${invoiceRow.invoicenumber}.`,
+      { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
+    );
+  }
 
   // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
   // The earnings row is the single source of truth.  INSERT with RETURNING
@@ -293,12 +305,12 @@ const executePayout = async (invoiceId) => {
     : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
-    to: invoiceUser.email,
+    to: payoutEmail,
     from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
     subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
-      <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
+      <p style="color:#475569;">${payoutCopy.body(payoutName)}</p>
       ${emailTable([
         [
           sellerLanguage === "fr"
@@ -317,7 +329,7 @@ const executePayout = async (invoiceId) => {
           `${sellerReceives} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
-        [payoutCopy.sentTo, invoiceUser.phone],
+        [payoutCopy.sentTo, payoutPhone],
         [
           payoutCopy.status,
           `&#10003;&nbsp;${payoutCopy.paidOut}`,
@@ -445,6 +457,15 @@ const executePayoutLink = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
+  // ── Effective payout details ──────────────────────────────────────────────
+  // For API-created invoices (e.g. Njimbong) money and emails must go to the
+  // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
+  // account (invoiceUser). For native invoices invoiceUser IS the seller.
+  const isApiInvoice = !!(invoiceRow.created_via_api && invoiceRow.seller_phone);
+  const payoutPhone = isApiInvoice ? invoiceRow.seller_phone : invoiceUser.phone;
+  const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
+  const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
+
   // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const referrerCheck = await db.query(
     "SELECT referred_by FROM users WHERE id = $1",
@@ -479,7 +500,7 @@ const executePayoutLink = async (invoiceId) => {
     {
       amount: sellerReceives.toString(),
       currency: "XAF",
-      to: invoiceUser.phone,
+      to: payoutPhone,
       description: `Fonlok payout for invoice ${invoiceRow.invoicenumber}`,
       external_reference: invoiceRow.invoicenumber,
     },
@@ -503,13 +524,16 @@ const executePayoutLink = async (invoiceId) => {
   ]);
 
   // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  notifyUser(
-    sellerId,
-    "payout_sent",
-    "Payout Sent",
-    `${sellerReceives} XAF has been sent to your Mobile Money account for invoice ${invoiceRow.invoicenumber}.`,
-    { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
-  );
+  // Skip for API invoices: the actual seller is a third party (not Njimbong).
+  if (!isApiInvoice) {
+    notifyUser(
+      sellerId,
+      "payout_sent",
+      "Payout Sent",
+      `${sellerReceives} XAF has been sent to your Mobile Money account for invoice ${invoiceRow.invoicenumber}.`,
+      { amount: sellerReceives, invoiceNumber: invoiceRow.invoicenumber },
+    );
+  }
 
   // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
   if (hasReferral && referralEarning > 0) {
@@ -577,12 +601,12 @@ const executePayoutLink = async (invoiceId) => {
     : `${payoutCopy.feeLabel} (2%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
-    to: invoiceUser.email,
+    to: payoutEmail,
     from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
     subject: payoutCopy.subject(invoiceRow.invoicenumber),
     html: emailWrap(
       `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
-      <p style="color:#475569;">${payoutCopy.body(invoiceUser.name)}</p>
+      <p style="color:#475569;">${payoutCopy.body(payoutName)}</p>
       ${emailTable([
         [
           sellerLanguage === "fr"
@@ -601,7 +625,7 @@ const executePayoutLink = async (invoiceId) => {
           `${sellerReceives} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
-        [payoutCopy.sentTo, invoiceUser.phone],
+        [payoutCopy.sentTo, payoutPhone],
         [
           payoutCopy.status,
           `&#10003;&nbsp;${payoutCopy.paidOut}`,
