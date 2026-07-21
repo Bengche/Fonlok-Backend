@@ -824,7 +824,7 @@ router.post(
       }
 
       // ── Fee calculation ────────────────────────────────────────────────
-      const DISPUTE_TOTAL_FEE_RATE = 0.03;
+      const DISPUTE_TOTAL_FEE_RATE = 0.02;
       const DISPUTE_REFERRAL_FEE_RATE = 0.005;
 
       const referrerCheckD = await db.query(

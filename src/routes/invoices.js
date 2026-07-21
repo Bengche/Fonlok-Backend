@@ -935,7 +935,7 @@ router.get("/escrow-balance/:id", async (req, res) => {
       [userId],
     );
     const gross = parseFloat(result.rows[0].gross_amount);
-    const net = Math.floor(gross * 0.97); // deduct 3% platform fee
+    const net = Math.floor(gross * 0.98); // deduct 2% platform fee (Campay takes ~1% separately)
     return res.status(200).json({
       invoiceCount: parseInt(result.rows[0].invoice_count),
       grossAmount: gross,

@@ -20,19 +20,19 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 // FEE CONSTANTS
 //
 // When a referral is involved:
-//   Fonlok keeps 2.5%  (PLATFORM_FEE_RATE)
+//   Fonlok keeps 1.5%  (PLATFORM_FEE_RATE)
 //   Referrer earns 0.5% (REFERRAL_FEE_RATE)
-//   Total deducted from gross: exactly 3%
+//   Total deducted from gross: exactly 2%  (Campay adds ~1% on their end)
 //
 // When there is no referral:
-//   Fonlok keeps the full 3% (PLATFORM_FEE_RATE + REFERRAL_FEE_RATE)
+//   Fonlok keeps the full 2% (PLATFORM_FEE_RATE + REFERRAL_FEE_RATE)
 //
-// In both cases the seller always receives gross - 3%.  The only difference is
+// In both cases the seller always receives gross - 2%.  The only difference is
 // where the 0.5% portion goes when a referrer exists.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const PLATFORM_FEE_RATE = 0.025; // 2.5% &mdash; Fonlok's cut
+const PLATFORM_FEE_RATE = 0.015; // 1.5% — Fonlok’s cut
 const REFERRAL_FEE_RATE = 0.005; // 0.5% &mdash; referrer's cut (only when referral exists)
-const TOTAL_FEE_RATE = 0.03; // 3.0% &mdash; always deducted from seller payout
+const TOTAL_FEE_RATE = 0.02; // 2.0% — Fonlok’s deduction (Campay takes their 1% separately)
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // renderPage({ type, title, body, ctaHref?, ctaLabel?, warningBox?, note? })
@@ -172,12 +172,12 @@ const executePayout = async (invoiceId) => {
 
   // Seller always receives gross - 2%.  When a referrer exists, Fonlok keeps
   // only 1.5% and the 0.5% remainder goes to the referrer.
-  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 3%
+  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
-  const fonlokNet = totalFee - referralEarning; // 2.5% or 3% — Fonlok's net
-  const sellerReceives = grossAmount - totalFee; // always gross - 3%
+  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% — Fonlok's net
+  const sellerReceives = grossAmount - totalFee; // always gross - 2% (Campay takes 1% on top)
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -493,12 +493,12 @@ const executePayoutLink = async (invoiceId) => {
   const referrerId = referrerCheck.rows[0]?.referred_by ?? null;
   const hasReferral = referrerId !== null;
 
-  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 3%
+  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
-  const fonlokNet = totalFee - referralEarning; // 2.5% or 3% — Fonlok's net
-  const sellerReceives = grossAmount - totalFee; // gross - 3%
+  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% — Fonlok's net
+  const sellerReceives = grossAmount - totalFee; // gross - 2%
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +

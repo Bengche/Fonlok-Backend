@@ -281,10 +281,10 @@ router.get("/stats", adminMiddleware, async (req, res) => {
       db.query("SELECT COUNT(*) FROM disputes WHERE status LIKE 'resolved%'"),
 
       // Platform revenue = fees actually collected from completed payouts.
-      // payout.amount = gross * 0.97, so fee = payout.amount * (0.03 / 0.97).
+      // payout.amount = gross * 0.98, so fee = payout.amount * (0.02 / 0.98).
       // Referral commissions (0.5%) are subtracted separately below.
       db.query(
-        "SELECT COALESCE(SUM(amount * 0.03 / 0.97), 0) AS gross_fee FROM payouts WHERE status = 'paid'",
+        "SELECT COALESCE(SUM(amount * 0.02 / 0.98), 0) AS gross_fee FROM payouts WHERE status = 'paid'",
       ),
 
       // Total referral commissions ever earned by referrers
@@ -2262,7 +2262,7 @@ router.post(
       }
 
       // 5. Fee calculation (3% platform, 0.5% referral if applicable)
-      const TOTAL_FEE_RATE = 0.03;
+      const TOTAL_FEE_RATE = 0.02;
       const REFERRAL_FEE_RATE = 0.005;
       const referrerR = await db.query(
         "SELECT referred_by FROM users WHERE id = $1",
@@ -2556,7 +2556,7 @@ router.post(
       }
 
       // 6. Fee calculation (3% — borne by buyer on refund, consistent with dispute flow)
-      const TOTAL_FEE_RATE = 0.03;
+      const TOTAL_FEE_RATE = 0.02;
       const totalFee = Math.floor(effectiveAmount * TOTAL_FEE_RATE);
       const refundAmount = effectiveAmount - totalFee;
 

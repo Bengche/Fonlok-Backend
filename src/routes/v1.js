@@ -795,7 +795,7 @@ router.post(
 
       const inv = claimResult.rows[0];
       const grossAmount = parseFloat(inv.amount);
-      const TOTAL_FEE_RATE = 0.03; // 3% platform fee
+      const TOTAL_FEE_RATE = 0.02; // 2% platform fee (Campay takes ~1% separately)
       const platformFee = Math.floor(grossAmount * TOTAL_FEE_RATE);
       const sellerReceives = grossAmount - platformFee;
 
