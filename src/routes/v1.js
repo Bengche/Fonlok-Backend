@@ -203,7 +203,7 @@ router.get("/ping", (req, res) => {
 // No Fonlok account is required for the seller or buyer — pass their
 // contact details directly. Funds are held by Fonlok until you call
 // POST /v1/payments/release, at which point Fonlok disburses net amount
-// (after 2% fee) to seller_phone and sends email receipts to both parties.
+// (after 3% fee) to seller_phone and sends email receipts to both parties.
 router.post(
   "/invoices",
   [
@@ -743,7 +743,7 @@ router.get(
 //
 // Call this after the buyer confirms receipt of goods/service.
 // Fonlok will:
-//   1. Deduct the 2% platform fee
+//   1. Deduct the 3% platform fee
 //   2. Disburse the net amount to seller_phone via Campay MoMo
 //   3. Send email confirmations to both seller and buyer
 //   4. Fire a payment.released webhook event to your registered endpoint
@@ -795,7 +795,7 @@ router.post(
 
       const inv = claimResult.rows[0];
       const grossAmount = parseFloat(inv.amount);
-      const TOTAL_FEE_RATE = 0.02; // 2% platform fee
+      const TOTAL_FEE_RATE = 0.03; // 3% platform fee
       const platformFee = Math.floor(grossAmount * TOTAL_FEE_RATE);
       const sellerReceives = grossAmount - platformFee;
 
@@ -892,7 +892,7 @@ router.post(
   <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
     <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Item</td><td style="padding:10px 0;text-align:right;font-weight:600;">${inv.invoicename}</td></tr>
     <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Gross amount</td><td style="padding:10px 0;text-align:right;">${grossAmount.toLocaleString()} XAF</td></tr>
-    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Platform fee (2%)</td><td style="padding:10px 0;text-align:right;">− ${platformFee.toLocaleString()} XAF</td></tr>
+    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Platform fee (3%)</td><td style="padding:10px 0;text-align:right;">− ${platformFee.toLocaleString()} XAF</td></tr>
     <tr><td style="padding:10px 0;color:#0F1F3D;font-weight:700;">You received</td><td style="padding:10px 0;text-align:right;font-weight:700;color:#16a34a;">${sellerReceives.toLocaleString()} XAF</td></tr>
   </table>
   <p style="color:#64748b;font-size:13px;">Reference: ${inv.invoicenumber}</p>

@@ -144,7 +144,7 @@ const COPY = {
       body: (sellerName, invoiceName) =>
         `You have successfully released the escrowed funds for <strong>${invoiceName}</strong>. The seller <strong>${sellerName}</strong> has been notified and the payment is on its way to their account.`,
       grossAmount: "Gross Amount",
-      feeLabel: "Platform Fee (2%)",
+      feeLabel: "Platform Fee (3%)",
       sellerReceived: "Seller Received",
       reviewTitle: "Share Your Experience",
       reviewBody:
@@ -299,7 +299,7 @@ const COPY = {
       body: (sellerName, invoiceName) =>
         `Vous avez libéré avec succès les fonds mis en séquestre pour <strong>${invoiceName}</strong>. Le vendeur <strong>${sellerName}</strong> a été notifié et le paiement est en route vers son compte.`,
       grossAmount: "Montant brut",
-      feeLabel: "Frais de plateforme (2 %)",
+      feeLabel: "Frais de plateforme (3 %)",
       sellerReceived: "Vendeur a reçu",
       reviewTitle: "Partagez votre expérience",
       reviewBody:

@@ -670,8 +670,8 @@ router.post(
 // POST /dispute/admin/:admin_token/resolve
 // Body: { decision: "seller" | "buyer", milestone_ids?: number[] }
 //
-// decision "seller" = release funds to the seller (2% fee deducted)
-// decision "buyer"  = refund the buyer (2% fee borne by buyer)
+// decision "seller" = release funds to the seller (3% fee deducted)
+// decision "buyer"  = refund the buyer (3% fee borne by buyer)
 //
 // milestone_ids (optional): if provided, resolves ONLY those specific
 //   milestones. Omit to resolve all eligible disputed milestones at once.
@@ -824,7 +824,7 @@ router.post(
       }
 
       // ── Fee calculation ────────────────────────────────────────────────
-      const DISPUTE_TOTAL_FEE_RATE = 0.02;
+      const DISPUTE_TOTAL_FEE_RATE = 0.03;
       const DISPUTE_REFERRAL_FEE_RATE = 0.005;
 
       const referrerCheckD = await db.query(
@@ -986,7 +986,7 @@ router.post(
                 ["Invoice", invoice.invoicenumber],
                 ["Effective Amount", `${effectiveAmount.toLocaleString()} XAF`],
                 [
-                  "Fonlok Fee (2%)",
+                  "Fonlok Fee (3%)",
                   `-${totalFeeD.toLocaleString()} XAF`,
                   "color:#dc2626;",
                 ],
@@ -1151,7 +1151,7 @@ router.post(
                     `${effectiveAmount.toLocaleString()} XAF`,
                   ],
                   [
-                    "Fonlok Fee (2%)",
+                    "Fonlok Fee (3%)",
                     `-${totalFeeD.toLocaleString()} XAF`,
                     "color:#dc2626;",
                   ],
