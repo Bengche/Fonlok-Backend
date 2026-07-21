@@ -929,6 +929,8 @@ router.post(
         object: "event",
         type: "payment.released",
         invoice_id: inv.invoicenumber,
+        invoice_name: inv.invoicename,
+        buyer_email: inv.clientemail || null,
         seller_phone: inv.seller_phone,
         seller_email: inv.seller_email,
         gross_amount: grossAmount,

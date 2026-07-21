@@ -10,6 +10,7 @@ import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { getUserEmailLanguageById } from "../utils/userLanguage.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import authMiddleware from "../middleware/authMiddleware.js";
+import { deliverWebhookEvent } from "./v1.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -222,6 +223,24 @@ const executePayout = async (invoiceId) => {
   await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [
     invoiceId,
   ]);
+
+  // â”€â”€ Step 5b: Fire payout.completed webhook for API-created invoices
+  if (isApiInvoice) {
+    deliverWebhookEvent(invoiceRow.userid, "payout.completed", {
+      object: "event",
+      type: "payout.completed",
+      invoice_id: invoiceRow.invoicenumber,
+      invoice_name: invoiceRow.invoicename,
+      buyer_email: invoiceRow.clientemail || null,
+      seller_phone: payoutPhone,
+      seller_email: payoutEmail || null,
+      gross_amount: grossAmount,
+      platform_fee: totalFee,
+      seller_receives: sellerReceives,
+      currency: invoiceRow.currency,
+      released_at: new Date().toISOString(),
+    }).catch(() => {});
+  }
 
   // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Skip for API invoices: the actual seller is a third party (not Njimbong).
@@ -522,6 +541,24 @@ const executePayoutLink = async (invoiceId) => {
   await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [
     invoiceId,
   ]);
+
+  // â”€â”€ Step 5b: Fire payout.completed webhook for API-created invoices
+  if (isApiInvoice) {
+    deliverWebhookEvent(invoiceRow.userid, "payout.completed", {
+      object: "event",
+      type: "payout.completed",
+      invoice_id: invoiceRow.invoicenumber,
+      invoice_name: invoiceRow.invoicename,
+      buyer_email: invoiceRow.clientemail || null,
+      seller_phone: payoutPhone,
+      seller_email: payoutEmail || null,
+      gross_amount: grossAmount,
+      platform_fee: totalFee,
+      seller_receives: sellerReceives,
+      currency: invoiceRow.currency,
+      released_at: new Date().toISOString(),
+    }).catch(() => {});
+  }
 
   // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Skip for API invoices: the actual seller is a third party (not Njimbong).
