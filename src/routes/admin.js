@@ -2261,7 +2261,7 @@ router.post(
         }
       }
 
-      // 5. Fee calculation (3% platform, 0.5% referral if applicable)
+      // 5. Fee calculation (2% platform, 0.5% referral if applicable)
       const TOTAL_FEE_RATE = 0.02;
       const REFERRAL_FEE_RATE = 0.005;
       const referrerR = await db.query(
