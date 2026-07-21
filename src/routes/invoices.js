@@ -108,11 +108,6 @@ router.post(
       .withMessage("Invoice name must be 200 characters or fewer.")
       .escape(),
 
-    body("email")
-      .trim()
-      .isEmail()
-      .withMessage("A valid client email address is required.")
-      .normalizeEmail(),
 
     body("currency")
       .trim()
@@ -170,7 +165,6 @@ router.post(
   async (req, res) => {
     const {
       invoicename,
-      email,
       currency,
       amount,
       description,
@@ -237,13 +231,6 @@ router.post(
       }
       const user = response.rows[0];
 
-      // Verify the submitted email matches the authenticated user's email
-      if (email.toLowerCase() !== user.email.toLowerCase()) {
-        return res.status(403).json({
-          message:
-            "The email you entered does not match your Fonlok account email. You can only create invoices from your own account.",
-        });
-      }
       const userId = user.id;
       const rounds = crypto.randomUUID().slice(0, 12);
       const invoiceNumber = `${userId}-${rounds}`;
@@ -274,7 +261,7 @@ router.post(
           "INSERT INTO invoices (invoicename, clientemail, currency, amount, invoiceNumber, userid, invoiceLink, description, expires_at, payment_type, seller_logo_url, seller_brand_name) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *",
           [
             invoicename,
-            email,
+            user.email,
             currency,
             amount,
             invoiceNumber,
