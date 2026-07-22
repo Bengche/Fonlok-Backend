@@ -41,6 +41,9 @@ import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import db from "../controllers/db.js";
 import logger from "../utils/logger.js";
+import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
+import { generateReceiptPdf } from "../utils/generateReceipt.js";
+import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -878,50 +881,109 @@ router.post(
         keyId: req.apiKey.id,
       });
 
-      // Email to seller.
-      if (inv.seller_email) {
-        sgMail
-          .send({
+      // Branded seller release email (non-fatal).
+      try {
+        if (inv.seller_email) {
+          const emailDisplayFee = Math.round(grossAmount * 0.03);
+          const emailSellerNet  = grossAmount - emailDisplayFee;
+          const payoutCopy = buildEmailCopy("en", "payoutConfirmed");
+          const feeLabel   = `${payoutCopy.feeLabel} (3%)`;
+          const sellerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
+          let sellerPdf = null;
+          try {
+            const buf = await generateReceiptPdf(inv.invoicenumber, "en");
+            sellerPdf = {
+              content: buf.toString("base64"),
+              filename: `fonlok-receipt-${inv.invoicenumber}.pdf`,
+              type: "application/pdf",
+              disposition: "attachment",
+            };
+          } catch (pdfErr) {
+            logger.warn("Seller PDF gen failed (non-fatal)", { error: pdfErr.message });
+          }
+          await sgMail.send({
             to: inv.seller_email,
             from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
-            subject: `Payment received — ${inv.invoicename}`,
-            html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px 24px;color:#1e293b;">
-  <h2 style="color:#0F1F3D;margin:0 0 16px;">You received a payment</h2>
-  <p>Hi ${inv.seller_name || "there"},</p>
-  <p style="margin-top:12px;">Your funds for <strong>${inv.invoicename}</strong> have been released. <strong>${sellerReceives.toLocaleString()} XAF</strong> has been sent to your MoMo number ending in <strong>···${inv.seller_phone.slice(-4)}</strong>.</p>
-  <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
-    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Item</td><td style="padding:10px 0;text-align:right;font-weight:600;">${inv.invoicename}</td></tr>
-    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Gross amount</td><td style="padding:10px 0;text-align:right;">${grossAmount.toLocaleString()} XAF</td></tr>
-    <tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:10px 0;color:#64748b;">Platform fee (3%)</td><td style="padding:10px 0;text-align:right;">− ${platformFee.toLocaleString()} XAF</td></tr>
-    <tr><td style="padding:10px 0;color:#0F1F3D;font-weight:700;">You received</td><td style="padding:10px 0;text-align:right;font-weight:700;color:#16a34a;">${sellerReceives.toLocaleString()} XAF</td></tr>
-  </table>
-  <p style="color:#64748b;font-size:13px;">Reference: ${inv.invoicenumber}</p>
-  <p style="color:#64748b;font-size:13px;margin-top:24px;">Powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a></p>
-</div>`,
-          })
-          .catch((e) =>
-            logger.warn("Seller release email failed", { error: e.message }),
-          );
+            subject: payoutCopy.subject(inv.invoicenumber),
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">${payoutCopy.title}</h2>
+              <p style="color:#475569;">${payoutCopy.body(inv.seller_name || "there")}</p>
+              ${emailTable([
+                ["Invoice Number", inv.invoicenumber],
+                ["Invoice Name", inv.invoicename],
+                [payoutCopy.grossAmount, `${grossAmount} XAF`],
+                [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+                [
+                  payoutCopy.amountSent,
+                  `${emailSellerNet} XAF`,
+                  "font-weight:700;color:#16a34a;font-size:15px;",
+                ],
+                [payoutCopy.sentTo, inv.seller_phone],
+                [
+                  payoutCopy.status,
+                  `&#10003;&nbsp;${payoutCopy.paidOut}`,
+                  "color:#16a34a;font-weight:600;",
+                ],
+              ])}
+              <p style="color:#475569;margin-top:12px;">${payoutCopy.receiptMessage}</p>
+              ${emailButton(sellerReceiptLink, payoutCopy.downloadButton)}`,
+              { footerNote: payoutCopy.footer },
+            ),
+            ...(sellerPdf ? { attachments: [sellerPdf] } : {}),
+          });
+          logger.info("Branded seller release email sent", { invoiceNumber: inv.invoicenumber });
+        }
+      } catch (sellerEmailErr) {
+        logger.warn("Seller release email failed", { error: sellerEmailErr.message });
       }
 
-      // Email to buyer.
-      if (inv.clientemail) {
-        sgMail
-          .send({
+      // Branded buyer release email (non-fatal).
+      try {
+        if (inv.clientemail) {
+          const emailDisplayFeeB = Math.round(grossAmount * 0.03);
+          const emailSellerNetB  = grossAmount - emailDisplayFeeB;
+          const releasedCopy = buildEmailCopy("en", "fundsReleased");
+          const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
+          let buyerPdf = null;
+          try {
+            const buf = await generateReceiptPdf(inv.invoicenumber, "en");
+            buyerPdf = {
+              content: buf.toString("base64"),
+              filename: `fonlok-receipt-${inv.invoicenumber}.pdf`,
+              type: "application/pdf",
+              disposition: "attachment",
+            };
+          } catch (pdfErr) {
+            logger.warn("Buyer PDF gen failed (non-fatal)", { error: pdfErr.message });
+          }
+          await sgMail.send({
             to: inv.clientemail,
             from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
-            subject: `Funds released — ${inv.invoicename}`,
-            html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px 24px;color:#1e293b;">
-  <h2 style="color:#0F1F3D;margin:0 0 16px;">Funds released</h2>
-  <p>Your payment of <strong>${grossAmount.toLocaleString()} XAF</strong> for <strong>${inv.invoicename}</strong> has been released to the seller.</p>
-  <p style="margin-top:12px;">Your transaction is now complete. Thank you for using the escrow service.</p>
-  <p style="color:#64748b;font-size:13px;margin-top:24px;">Reference: ${inv.invoicenumber}</p>
-  <p style="color:#64748b;font-size:13px;">Powered by <a href="https://fonlok.com" style="color:#0F1F3D;">Fonlok</a></p>
-</div>`,
-          })
-          .catch((e) =>
-            logger.warn("Buyer release email failed", { error: e.message }),
-          );
+            subject: releasedCopy.subject(inv.invoicenumber),
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">${releasedCopy.title}</h2>
+              <p style="color:#475569;">${releasedCopy.body(inv.seller_name || "the seller", inv.invoicename)}</p>
+              ${emailTable([
+                ["Invoice Number", inv.invoicenumber],
+                ["Invoice Name", inv.invoicename],
+                [releasedCopy.grossAmount, `${grossAmount} XAF`],
+                [releasedCopy.feeLabel, `-${emailDisplayFeeB} XAF`, "color:#dc2626;"],
+                [
+                  releasedCopy.sellerReceived,
+                  `${emailSellerNetB} XAF`,
+                  "font-weight:700;color:#16a34a;font-size:15px;",
+                ],
+              ])}
+              <p style="color:#475569;margin-top:12px;">${releasedCopy.receiptMessage}</p>
+              ${emailButton(buyerReceiptLink, releasedCopy.downloadButton)}`,
+              { footerNote: releasedCopy.footerNote },
+            ),
+            ...(buyerPdf ? { attachments: [buyerPdf] } : {}),
+          });
+          logger.info("Branded buyer release email sent", { invoiceNumber: inv.invoicenumber });
+        }
+      } catch (buyerEmailErr) {
+        logger.warn("Buyer release email failed", { error: buyerEmailErr.message });
       }
 
       // Fire webhook — never block the response.
