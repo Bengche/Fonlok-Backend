@@ -194,12 +194,10 @@ router.post(
       });
     } catch (err) {
       logger.error("Wallet deposit initiate error", { error: err.message });
-      return res
-        .status(500)
-        .json({
-          error: "server_error",
-          message: "An unexpected error occurred.",
-        });
+      return res.status(500).json({
+        error: "server_error",
+        message: "An unexpected error occurred.",
+      });
     }
   },
 );
@@ -327,12 +325,10 @@ router.get("/wallet/deposit/:reference/status", async (req, res) => {
     }
   } catch (err) {
     logger.error("Wallet deposit status check failed", { error: err.message });
-    return res
-      .status(500)
-      .json({
-        error: "server_error",
-        message: "An unexpected error occurred.",
-      });
+    return res.status(500).json({
+      error: "server_error",
+      message: "An unexpected error occurred.",
+    });
   }
 });
 
@@ -363,12 +359,10 @@ router.get("/wallet/balance", async (req, res) => {
     });
   } catch (err) {
     logger.error("Wallet balance fetch failed", { error: err.message });
-    return res
-      .status(500)
-      .json({
-        error: "server_error",
-        message: "An unexpected error occurred.",
-      });
+    return res.status(500).json({
+      error: "server_error",
+      message: "An unexpected error occurred.",
+    });
   }
 });
 
@@ -528,12 +522,10 @@ router.post(
       });
     } catch (err) {
       logger.error("Wallet withdraw failed", { error: err.message });
-      return res
-        .status(500)
-        .json({
-          error: "server_error",
-          message: "An unexpected error occurred.",
-        });
+      return res.status(500).json({
+        error: "server_error",
+        message: "An unexpected error occurred.",
+      });
     }
   },
 );
@@ -704,13 +696,17 @@ router.post(
                   "Your funds are held securely in escrow. Only release when satisfied. Do not share this link.",
               },
             ),
-            ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
+            ...(buyerPdfAttachment
+              ? { attachments: [buyerPdfAttachment] }
+              : {}),
           });
           logger.info("Wallet escrow buyer confirmation email sent", {
             invoiceNumber: inv.invoicenumber,
           });
         } catch (emailErr) {
-          logger.warn("Wallet escrow buyer email failed", { error: emailErr.message });
+          logger.warn("Wallet escrow buyer email failed", {
+            error: emailErr.message,
+          });
         }
       }
 
@@ -727,12 +723,10 @@ router.post(
       });
     } catch (err) {
       logger.error("Wallet pay failed", { error: err.message });
-      return res
-        .status(500)
-        .json({
-          error: "server_error",
-          message: "An unexpected error occurred.",
-        });
+      return res.status(500).json({
+        error: "server_error",
+        message: "An unexpected error occurred.",
+      });
     }
   },
 );
