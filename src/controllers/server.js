@@ -28,6 +28,7 @@ import kyc from "../routes/kyc.js";
 import sandboxRoutes from "../routes/sandbox.js";
 import sandboxKeys from "../routes/sandboxKeys.js";
 import v1Routes from "../routes/v1.js";
+import walletRoutes from "../routes/wallet.js";
 import apiKeys from "../routes/apiKeys.js";
 import { startScheduledJobs } from "../jobs/scheduledJobs.js";
 import { fileURLToPath } from "url";
@@ -291,6 +292,8 @@ app.use("/dev", sandboxKeys);
 // Rate-limited independently from sandbox. Real payments are processed.
 app.use("/v1", liveApiLimiter);
 app.use("/v1", v1Routes);
+app.use("/v1", liveApiLimiter);
+app.use("/v1", walletRoutes);
 // Live API key management — requires a normal user JWT session.
 app.use("/dev", apiKeys);
 
@@ -831,5 +834,39 @@ app.listen(PORT, async () => {
     logger.warn("api_keys approval gate migration failed", {
       error: err.message,
     });
+  }
+
+  // ── Wallet tables ──────────────────────────────────────────────────────
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS wallets (
+        id               SERIAL      PRIMARY KEY,
+        platform_user_id INTEGER     NOT NULL REFERENCES users(id),
+        user_ref         VARCHAR(255) NOT NULL,
+        balance          INTEGER      NOT NULL DEFAULT 0 CHECK (balance >= 0),
+        currency         VARCHAR(10)  NOT NULL DEFAULT 'XAF',
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (platform_user_id, user_ref)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id               SERIAL      PRIMARY KEY,
+        wallet_id        INTEGER     NOT NULL REFERENCES wallets(id),
+        type             VARCHAR(20) NOT NULL
+          CHECK (type IN ('deposit', 'withdrawal', 'escrow_pay')),
+        gross_amount     INTEGER     NOT NULL,
+        net_amount       INTEGER     NOT NULL,
+        fee_amount       INTEGER     NOT NULL DEFAULT 0,
+        status           VARCHAR(20) NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending', 'completed', 'failed')),
+        campay_reference VARCHAR(255),
+        description      TEXT,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    logger.info("wallet tables ready");
+  } catch (err) {
+    logger.warn("wallet tables migration failed", { error: err.message });
   }
 });
