@@ -319,6 +319,9 @@ const executePayout = async (invoiceId) => {
   }
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
+  // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
+  const emailDisplayFee = Math.round(grossAmount * (hasReferral ? 0.025 : 0.03));
+  const emailSellerNet  = grossAmount - emailDisplayFee;
   const feeLabel = hasReferral
     ? `${payoutCopy.feeLabel} (2.5%)`
     : `${payoutCopy.feeLabel} (3%)`;
@@ -342,10 +345,10 @@ const executePayout = async (invoiceId) => {
           invoiceRow.invoicename,
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
-        [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+        [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
         [
           payoutCopy.amountSent,
-          `${sellerReceives} XAF`,
+          `${emailSellerNet} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, payoutPhone],
@@ -417,10 +420,10 @@ const executePayout = async (invoiceId) => {
               invoiceRow.invoicename,
             ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
-            [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
             [
               releasedCopy.sellerReceived,
-              `${sellerReceives} XAF`,
+              `${emailSellerNet} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
           ])}
@@ -649,6 +652,9 @@ const executePayoutLink = async (invoiceId) => {
   }
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
+  // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
+  const emailDisplayFee = Math.round(grossAmount * (hasReferral ? 0.025 : 0.03));
+  const emailSellerNet  = grossAmount - emailDisplayFee;
   const feeLabel = hasReferral
     ? `${payoutCopy.feeLabel} (2.5%)`
     : `${payoutCopy.feeLabel} (3%)`;
@@ -672,10 +678,10 @@ const executePayoutLink = async (invoiceId) => {
           invoiceRow.invoicename,
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
-        [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+        [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
         [
           payoutCopy.amountSent,
-          `${sellerReceives} XAF`,
+          `${emailSellerNet} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, payoutPhone],
@@ -747,10 +753,10 @@ const executePayoutLink = async (invoiceId) => {
               invoiceRow.invoicename,
             ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
-            [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
             [
               releasedCopy.sellerReceived,
-              `${sellerReceives} XAF`,
+              `${emailSellerNet} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
           ])}
