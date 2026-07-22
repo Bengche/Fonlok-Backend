@@ -28,6 +28,7 @@ import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import logger from "../utils/logger.js";
 import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
+import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
 dotenv.config();
@@ -40,14 +41,17 @@ router.use(apiKeyAuth);
 
 // ── Fee constants ─────────────────────────────────────────────────────────────
 const DEPOSIT_FEE_RATE = 0.015; // 1.5% added on top of deposit amount
-const CAMPAY_FEE_RATE  = 0.01;  // 1% Campay deducts on disbursements (we cover this)
+const CAMPAY_FEE_RATE = 0.01; // 1% Campay deducts on disbursements (we cover this)
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 async function getCampayToken() {
   const res = await axios.post(
     `${process.env.CAMPAY_BASE_URL}token/`,
-    { username: process.env.CAMPAY_USERNAME, password: process.env.CAMPAY_PASSWORD },
+    {
+      username: process.env.CAMPAY_USERNAME,
+      password: process.env.CAMPAY_PASSWORD,
+    },
     { timeout: 10000 },
   );
   return res.data.token;
@@ -99,7 +103,7 @@ router.post(
     const amount = parseInt(req.body.amount, 10);
 
     // 1.5% fee added on top — user pays amount + fee, wallet gets credited amount
-    const depositFee    = Math.ceil(amount * DEPOSIT_FEE_RATE);
+    const depositFee = Math.ceil(amount * DEPOSIT_FEE_RATE);
     const chargedAmount = amount + depositFee;
 
     try {
@@ -134,7 +138,8 @@ router.post(
         });
         return res.status(502).json({
           error: "payment_gateway_error",
-          message: "Could not connect to the payment gateway. Please try again.",
+          message:
+            "Could not connect to the payment gateway. Please try again.",
         });
       }
 
@@ -150,7 +155,10 @@ router.post(
             description: description || "Fonlok wallet top-up",
             external_reference: `WALLET-DEP-${txId}`,
           },
-          { headers: { Authorization: `Token ${campayToken}` }, timeout: 30000 },
+          {
+            headers: { Authorization: `Token ${campayToken}` },
+            timeout: 30000,
+          },
         );
         collectRef = collectRes.data.reference;
       } catch (collectErr) {
@@ -188,7 +196,10 @@ router.post(
       logger.error("Wallet deposit initiate error", { error: err.message });
       return res
         .status(500)
-        .json({ error: "server_error", message: "An unexpected error occurred." });
+        .json({
+          error: "server_error",
+          message: "An unexpected error occurred.",
+        });
     }
   },
 );
@@ -198,168 +209,168 @@ router.post(
 // Polls Campay for the status of a pending deposit.
 // On first SUCCESSFUL response: credits the wallet and marks transaction completed.
 // Idempotent — safe to call multiple times.
-router.get(
-  "/wallet/deposit/:reference/status",
-  async (req, res) => {
-    const { reference } = req.params;
-    const platformUserId = req.apiKey.user_id;
+router.get("/wallet/deposit/:reference/status", async (req, res) => {
+  const { reference } = req.params;
+  const platformUserId = req.apiKey.user_id;
 
-    try {
-      const txRes = await db.query(
-        `SELECT wt.*, w.platform_user_id, w.user_ref, w.id AS wallet_id
+  try {
+    const txRes = await db.query(
+      `SELECT wt.*, w.platform_user_id, w.user_ref, w.id AS wallet_id
          FROM wallet_transactions wt
          JOIN wallets w ON wt.wallet_id = w.id
          WHERE wt.campay_reference = $1 AND wt.type = 'deposit'
          LIMIT 1`,
-        [reference],
+      [reference],
+    );
+    if (txRes.rows.length === 0) {
+      return res.status(404).json({
+        error: "not_found",
+        message: "No deposit found for this reference.",
+      });
+    }
+    const tx = txRes.rows[0];
+    if (tx.platform_user_id !== platformUserId) {
+      return res.status(403).json({
+        error: "forbidden",
+        message: "This transaction does not belong to your account.",
+      });
+    }
+
+    // Return cached status if already settled
+    if (tx.status === "completed") {
+      return res.json({
+        reference,
+        status: "completed",
+        amount_credited: tx.net_amount,
+        transaction_id: tx.id,
+        user_ref: tx.user_ref,
+      });
+    }
+    if (tx.status === "failed") {
+      return res.json({
+        reference,
+        status: "failed",
+        transaction_id: tx.id,
+        user_ref: tx.user_ref,
+      });
+    }
+
+    // Ask Campay for current status
+    let campayToken;
+    try {
+      campayToken = await getCampayToken();
+    } catch {
+      return res.status(502).json({
+        error: "payment_gateway_error",
+        message: "Could not connect to payment gateway.",
+      });
+    }
+
+    let campayStatus;
+    try {
+      const statusRes = await axios.get(
+        `${process.env.CAMPAY_BASE_URL}transaction/${reference}/`,
+        { headers: { Authorization: `Token ${campayToken}` }, timeout: 10000 },
       );
-      if (txRes.rows.length === 0) {
-        return res.status(404).json({
-          error: "not_found",
-          message: "No deposit found for this reference.",
-        });
-      }
-      const tx = txRes.rows[0];
-      if (tx.platform_user_id !== platformUserId) {
-        return res.status(403).json({
-          error: "forbidden",
-          message: "This transaction does not belong to your account.",
-        });
-      }
+      campayStatus = statusRes.data.status; // "SUCCESSFUL" | "FAILED" | "PENDING"
+    } catch (statusErr) {
+      return res.status(502).json({
+        error: "payment_gateway_error",
+        message: "Could not retrieve payment status from gateway.",
+      });
+    }
 
-      // Return cached status if already settled
-      if (tx.status === "completed") {
-        return res.json({
-          reference,
-          status: "completed",
-          amount_credited: tx.net_amount,
-          transaction_id: tx.id,
-          user_ref: tx.user_ref,
-        });
-      }
-      if (tx.status === "failed") {
-        return res.json({
-          reference,
-          status: "failed",
-          transaction_id: tx.id,
-          user_ref: tx.user_ref,
-        });
-      }
-
-      // Ask Campay for current status
-      let campayToken;
-      try {
-        campayToken = await getCampayToken();
-      } catch {
-        return res.status(502).json({
-          error: "payment_gateway_error",
-          message: "Could not connect to payment gateway.",
-        });
-      }
-
-      let campayStatus;
-      try {
-        const statusRes = await axios.get(
-          `${process.env.CAMPAY_BASE_URL}transaction/${reference}/`,
-          { headers: { Authorization: `Token ${campayToken}` }, timeout: 10000 },
-        );
-        campayStatus = statusRes.data.status; // "SUCCESSFUL" | "FAILED" | "PENDING"
-      } catch (statusErr) {
-        return res.status(502).json({
-          error: "payment_gateway_error",
-          message: "Could not retrieve payment status from gateway.",
-        });
-      }
-
-      if (campayStatus === "SUCCESSFUL") {
-        // Atomically mark completed and credit wallet.
-        // The AND status = 'pending' guard prevents double-crediting.
-        const updateRes = await db.query(
-          `UPDATE wallet_transactions
+    if (campayStatus === "SUCCESSFUL") {
+      // Atomically mark completed and credit wallet.
+      // The AND status = 'pending' guard prevents double-crediting.
+      const updateRes = await db.query(
+        `UPDATE wallet_transactions
            SET status = 'completed'
            WHERE id = $1 AND status = 'pending'
            RETURNING id`,
-          [tx.id],
+        [tx.id],
+      );
+      if (updateRes.rowCount > 0) {
+        // First confirmation — credit the wallet
+        await db.query(
+          "UPDATE wallets SET balance = balance + $1 WHERE id = $2",
+          [tx.net_amount, tx.wallet_id],
         );
-        if (updateRes.rowCount > 0) {
-          // First confirmation — credit the wallet
-          await db.query(
-            "UPDATE wallets SET balance = balance + $1 WHERE id = $2",
-            [tx.net_amount, tx.wallet_id],
-          );
-        }
-        return res.json({
-          reference,
-          status: "completed",
-          amount_credited: tx.net_amount,
-          transaction_id: tx.id,
-          user_ref: tx.user_ref,
-        });
-      } else if (campayStatus === "FAILED") {
-        await db
-          .query(
-            "UPDATE wallet_transactions SET status = 'failed' WHERE id = $1",
-            [tx.id],
-          )
-          .catch(() => {});
-        return res.json({
-          reference,
-          status: "failed",
-          transaction_id: tx.id,
-          user_ref: tx.user_ref,
-        });
-      } else {
-        return res.json({
-          reference,
-          status: "pending",
-          transaction_id: tx.id,
-          user_ref: tx.user_ref,
-        });
       }
-    } catch (err) {
-      logger.error("Wallet deposit status check failed", { error: err.message });
-      return res
-        .status(500)
-        .json({ error: "server_error", message: "An unexpected error occurred." });
+      return res.json({
+        reference,
+        status: "completed",
+        amount_credited: tx.net_amount,
+        transaction_id: tx.id,
+        user_ref: tx.user_ref,
+      });
+    } else if (campayStatus === "FAILED") {
+      await db
+        .query(
+          "UPDATE wallet_transactions SET status = 'failed' WHERE id = $1",
+          [tx.id],
+        )
+        .catch(() => {});
+      return res.json({
+        reference,
+        status: "failed",
+        transaction_id: tx.id,
+        user_ref: tx.user_ref,
+      });
+    } else {
+      return res.json({
+        reference,
+        status: "pending",
+        transaction_id: tx.id,
+        user_ref: tx.user_ref,
+      });
     }
-  },
-);
+  } catch (err) {
+    logger.error("Wallet deposit status check failed", { error: err.message });
+    return res
+      .status(500)
+      .json({
+        error: "server_error",
+        message: "An unexpected error occurred.",
+      });
+  }
+});
 
 // ─── GET /v1/wallet/balance ───────────────────────────────────────────────────
 //
 // Returns the current wallet balance for a user_ref.
 // Returns 0 if no wallet exists yet (first deposit creates the wallet).
-router.get(
-  "/wallet/balance",
-  async (req, res) => {
-    const platformUserId = req.apiKey.user_id;
-    const { user_ref } = req.query;
+router.get("/wallet/balance", async (req, res) => {
+  const platformUserId = req.apiKey.user_id;
+  const { user_ref } = req.query;
 
-    if (!user_ref?.trim()) {
-      return res.status(400).json({
-        error: "validation_error",
-        message: "user_ref query parameter is required.",
-      });
-    }
+  if (!user_ref?.trim()) {
+    return res.status(400).json({
+      error: "validation_error",
+      message: "user_ref query parameter is required.",
+    });
+  }
 
-    try {
-      const result = await db.query(
-        "SELECT balance, currency FROM wallets WHERE platform_user_id = $1 AND user_ref = $2",
-        [platformUserId, user_ref.trim()],
-      );
-      return res.json({
-        user_ref: user_ref.trim(),
-        balance: result.rows[0]?.balance ?? 0,
-        currency: result.rows[0]?.currency ?? "XAF",
+  try {
+    const result = await db.query(
+      "SELECT balance, currency FROM wallets WHERE platform_user_id = $1 AND user_ref = $2",
+      [platformUserId, user_ref.trim()],
+    );
+    return res.json({
+      user_ref: user_ref.trim(),
+      balance: result.rows[0]?.balance ?? 0,
+      currency: result.rows[0]?.currency ?? "XAF",
+    });
+  } catch (err) {
+    logger.error("Wallet balance fetch failed", { error: err.message });
+    return res
+      .status(500)
+      .json({
+        error: "server_error",
+        message: "An unexpected error occurred.",
       });
-    } catch (err) {
-      logger.error("Wallet balance fetch failed", { error: err.message });
-      return res
-        .status(500)
-        .json({ error: "server_error", message: "An unexpected error occurred." });
-    }
-  },
-);
+  }
+});
 
 // ─── POST /v1/wallet/withdraw ─────────────────────────────────────────────────
 //
@@ -385,7 +396,7 @@ router.post(
     const amount = parseInt(req.body.amount, 10);
 
     // Top up Campay's 1% fee so user receives the full requested amount
-    const campayFee    = Math.ceil(amount * CAMPAY_FEE_RATE);
+    const campayFee = Math.ceil(amount * CAMPAY_FEE_RATE);
     const campayAmount = amount + campayFee;
 
     try {
@@ -415,7 +426,7 @@ router.post(
         });
       }
 
-      const walletId   = debitRes.rows[0].id;
+      const walletId = debitRes.rows[0].id;
       const newBalance = debitRes.rows[0].balance;
 
       // Create transaction record
@@ -440,10 +451,16 @@ router.post(
         campayToken = await getCampayToken();
       } catch (authErr) {
         await db
-          .query("UPDATE wallets SET balance = balance + $1 WHERE id = $2", [amount, walletId])
+          .query("UPDATE wallets SET balance = balance + $1 WHERE id = $2", [
+            amount,
+            walletId,
+          ])
           .catch(() => {});
         await db
-          .query("UPDATE wallet_transactions SET status = 'failed' WHERE id = $1", [txId])
+          .query(
+            "UPDATE wallet_transactions SET status = 'failed' WHERE id = $1",
+            [txId],
+          )
           .catch(() => {});
         return res.status(502).json({
           error: "payment_gateway_error",
@@ -463,18 +480,29 @@ router.post(
             description: description || "Fonlok wallet withdrawal",
             external_reference: `WALLET-WDR-${txId}`,
           },
-          { headers: { Authorization: `Token ${campayToken}` }, timeout: 15000 },
+          {
+            headers: { Authorization: `Token ${campayToken}` },
+            timeout: 15000,
+          },
         );
         campayRef = wdrRes.data.reference;
       } catch (wdrErr) {
         // Restore balance — Campay never received the money
         await db
-          .query("UPDATE wallets SET balance = balance + $1 WHERE id = $2", [amount, walletId])
+          .query("UPDATE wallets SET balance = balance + $1 WHERE id = $2", [
+            amount,
+            walletId,
+          ])
           .catch(() => {});
         await db
-          .query("UPDATE wallet_transactions SET status = 'failed' WHERE id = $1", [txId])
+          .query(
+            "UPDATE wallet_transactions SET status = 'failed' WHERE id = $1",
+            [txId],
+          )
           .catch(() => {});
-        logger.error("Campay withdraw failed for wallet", { error: wdrErr.message });
+        logger.error("Campay withdraw failed for wallet", {
+          error: wdrErr.message,
+        });
         return res.status(502).json({
           error: "payment_gateway_error",
           message:
@@ -502,7 +530,10 @@ router.post(
       logger.error("Wallet withdraw failed", { error: err.message });
       return res
         .status(500)
-        .json({ error: "server_error", message: "An unexpected error occurred." });
+        .json({
+          error: "server_error",
+          message: "An unexpected error occurred.",
+        });
     }
   },
 );
@@ -556,7 +587,7 @@ router.post(
         });
       }
 
-      const inv           = invRes.rows[0];
+      const inv = invRes.rows[0];
       const invoiceAmount = parseInt(inv.amount);
 
       // Atomic debit — prevents overdraft
@@ -586,7 +617,7 @@ router.post(
         });
       }
 
-      const walletId   = debitRes.rows[0].id;
+      const walletId = debitRes.rows[0].id;
       const newBalance = debitRes.rows[0].balance;
 
       // Record wallet transaction (no fee at this stage)
@@ -594,14 +625,20 @@ router.post(
         `INSERT INTO wallet_transactions
            (wallet_id, type, gross_amount, net_amount, fee_amount, status, description)
          VALUES ($1, 'escrow_pay', $2, $2, 0, 'completed', $3)`,
-        [walletId, invoiceAmount, `Escrow payment for invoice ${inv.invoicenumber}`],
+        [
+          walletId,
+          invoiceAmount,
+          `Escrow payment for invoice ${inv.invoicenumber}`,
+        ],
       );
 
       // Mark invoice as paid
-      await db.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [inv.id]);
+      await db.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [
+        inv.id,
+      ]);
 
       // Create buyer release confirmation code (same schema as paymentWebhook.js)
-      const releaseCode       = generate8CharCode();
+      const releaseCode = generate8CharCode();
       const verificationToken = crypto.randomBytes(32).toString("hex");
       await db.query(
         `INSERT INTO confirmation_codes
@@ -622,12 +659,30 @@ router.post(
           .catch(() => {});
       }
 
-      // Send buyer confirmation email with release link (non-fatal)
+      // Send branded buyer confirmation email with PDF receipt and release link (non-fatal)
       const releaseLink = `${process.env.BACKEND_URL}/api/verify-payout/${verificationToken}/${inv.id}`;
       if (inv.clientemail) {
-        const confirmedCopy = buildEmailCopy("en", "paymentConfirmed");
-        sgMail
-          .send({
+        try {
+          const confirmedCopy = buildEmailCopy("en", "paymentConfirmed");
+          const receiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
+
+          // Generate PDF receipt attachment (non-fatal if it fails)
+          let buyerPdfAttachment = null;
+          try {
+            const pdfBuf = await generateReceiptPdf(inv.invoicenumber, "en");
+            buyerPdfAttachment = {
+              content: pdfBuf.toString("base64"),
+              filename: `fonlok-receipt-${inv.invoicenumber}.pdf`,
+              type: "application/pdf",
+              disposition: "attachment",
+            };
+          } catch (pdfErr) {
+            logger.warn("Wallet escrow buyer PDF gen failed (non-fatal)", {
+              error: pdfErr.message,
+            });
+          }
+
+          await sgMail.send({
             to: inv.clientemail,
             from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
             subject: confirmedCopy.subject(inv.invoicenumber),
@@ -640,6 +695,8 @@ router.post(
                 ["Amount", `${invoiceAmount} XAF`],
                 ["Status", "&#10003;&nbsp;Paid &mdash; Held in Escrow"],
               ])}
+              <p style="color:#475569;margin-top:12px;">${confirmedCopy.receiptMessage}</p>
+              ${emailButton(receiptDownloadLink, confirmedCopy.downloadButton)}
               <p style="color:#475569;margin-top:16px;">When you are satisfied with your purchase, click the button below to release the funds to the seller.</p>
               ${emailButton(releaseLink, confirmedCopy.confirmButton)}`,
               {
@@ -647,10 +704,14 @@ router.post(
                   "Your funds are held securely in escrow. Only release when satisfied. Do not share this link.",
               },
             ),
-          })
-          .catch((e) =>
-            logger.warn("Wallet escrow buyer email failed", { error: e.message }),
-          );
+            ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
+          });
+          logger.info("Wallet escrow buyer confirmation email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
+        } catch (emailErr) {
+          logger.warn("Wallet escrow buyer email failed", { error: emailErr.message });
+        }
       }
 
       return res.json({
@@ -668,7 +729,10 @@ router.post(
       logger.error("Wallet pay failed", { error: err.message });
       return res
         .status(500)
-        .json({ error: "server_error", message: "An unexpected error occurred." });
+        .json({
+          error: "server_error",
+          message: "An unexpected error occurred.",
+        });
     }
   },
 );
