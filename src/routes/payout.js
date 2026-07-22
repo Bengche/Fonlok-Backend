@@ -387,6 +387,19 @@ const executePayout = async (invoiceId) => {
         : "en";
       const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
       const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
+      const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
+      let buyerPdfAttachment = null;
+      try {
+        const pdfBuf = await generateReceiptPdf(invoiceRow.invoicenumber, buyerLang);
+        buyerPdfAttachment = {
+          content: pdfBuf.toString("base64"),
+          filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
+          type: "application/pdf",
+          disposition: "attachment",
+        };
+      } catch (pdfErr) {
+        console.error("⚠️ Could not generate buyer release receipt PDF:", pdfErr.message);
+      }
       await sgMail.send({
         to: buyer.email,
         from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
@@ -411,6 +424,8 @@ const executePayout = async (invoiceId) => {
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
           ])}
+          <p style="color:#475569;margin-top:12px;">${releasedCopy.receiptMessage}</p>
+          ${emailButton(buyerReceiptLink, releasedCopy.downloadButton)}
           <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
             <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
             <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
@@ -418,6 +433,7 @@ const executePayout = async (invoiceId) => {
           </div>`,
           { footerNote: releasedCopy.footerNote },
         ),
+        ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
       });
       console.log(
         `\u2705 Buyer release confirmation email sent to ${buyer.email}`,
@@ -701,6 +717,19 @@ const executePayoutLink = async (invoiceId) => {
         : "en";
       const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
       const reviewLink = `${process.env.FRONTEND_URL}/review/${invoiceUser.username}/${invoiceRow.invoicenumber}`;
+      const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
+      let buyerPdfAttachment = null;
+      try {
+        const pdfBuf = await generateReceiptPdf(invoiceRow.invoicenumber, buyerLang);
+        buyerPdfAttachment = {
+          content: pdfBuf.toString("base64"),
+          filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
+          type: "application/pdf",
+          disposition: "attachment",
+        };
+      } catch (pdfErr) {
+        console.error("⚠️ Could not generate buyer release receipt PDF:", pdfErr.message);
+      }
       await sgMail.send({
         to: buyer.email,
         from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
@@ -725,6 +754,8 @@ const executePayoutLink = async (invoiceId) => {
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
           ])}
+          <p style="color:#475569;margin-top:12px;">${releasedCopy.receiptMessage}</p>
+          ${emailButton(buyerReceiptLink, releasedCopy.downloadButton)}
           <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
             <p style="color:#0F1F3D;font-weight:700;font-size:15px;margin:0 0 6px;">${releasedCopy.reviewTitle}</p>
             <p style="color:#475569;font-size:14px;margin:0 0 12px;">${releasedCopy.reviewBody}</p>
@@ -732,6 +763,7 @@ const executePayoutLink = async (invoiceId) => {
           </div>`,
           { footerNote: releasedCopy.footerNote },
         ),
+        ...(buyerPdfAttachment ? { attachments: [buyerPdfAttachment] } : {}),
       });
       console.log(
         `\u2705 Buyer release confirmation email sent to ${buyer.email}`,

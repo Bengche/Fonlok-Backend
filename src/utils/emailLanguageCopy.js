@@ -146,6 +146,8 @@ const COPY = {
       grossAmount: "Gross Amount",
       feeLabel: "Platform Fee (3%)",
       sellerReceived: "Seller Received",
+      receiptMessage: "Your transaction receipt is ready — download it for your records.",
+      downloadButton: "Download Receipt",
       reviewTitle: "Share Your Experience",
       reviewBody:
         "How was your experience with this seller? Your review helps others in the Fonlok community make informed decisions.",
@@ -301,6 +303,8 @@ const COPY = {
       grossAmount: "Montant brut",
       feeLabel: "Frais de plateforme (3 %)",
       sellerReceived: "Vendeur a reçu",
+      receiptMessage: "Votre reçu de transaction est disponible — téléchargez-le pour vos archives.",
+      downloadButton: "Télécharger le reçu",
       reviewTitle: "Partagez votre expérience",
       reviewBody:
         "Comment s'est passée votre expérience avec ce vendeur ? Votre avis aide d'autres membres de la communauté Fonlok à prendre de meilleures décisions.",
