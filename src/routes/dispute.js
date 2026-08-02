@@ -841,6 +841,11 @@ router.post(
         : 0;
       const fonlokNetD = totalFeeD - referralEarningD;
 
+      // Display-only fee: show the combined 3% (Fonlok 2% + Campay ~1%) in
+      // emails, chat messages, and webhooks. Payout variables are unchanged.
+      const displayFee    = Math.round(effectiveAmount * 0.03);
+      const displayAmount = effectiveAmount - displayFee;
+
       // Helper: compute final dispute status after this resolution
       const computeDisputeStatus = async (baseStatus) => {
         if (!isMilestoneInvoiceR) return baseStatus;
@@ -980,8 +985,8 @@ router.post(
               "system",
               "system",
               isFinal
-                ? `✅ Dispute resolved by admin. ${sellerShare.toLocaleString()} XAF released to the seller.`
-                : `⚠️ Admin resolved ${eligibleMilestones.length} milestone(s). ${sellerShare.toLocaleString()} XAF released to the seller. Dispute remains open for remaining milestones.`,
+                ? `✅ Dispute resolved by admin. ${displayAmount.toLocaleString()} XAF released to the seller.`
+                : `⚠️ Admin resolved ${eligibleMilestones.length} milestone(s). ${displayAmount.toLocaleString()} XAF released to the seller. Dispute remains open for remaining milestones.`,
             ],
           );
         }
@@ -999,12 +1004,12 @@ router.post(
                 ["Effective Amount", `${effectiveAmount.toLocaleString()} XAF`],
                 [
                   "Fonlok Fee (3%)",
-                  `-${totalFeeD.toLocaleString()} XAF`,
+                  `-${displayFee.toLocaleString()} XAF`,
                   "color:#dc2626;",
                 ],
                 [
                   "Amount Sent",
-                  `${sellerShare.toLocaleString()} XAF`,
+                  `${displayAmount.toLocaleString()} XAF`,
                   "font-weight:700;color:#16a34a;font-size:15px;",
                 ],
                 ["Sent To", seller.phone],
@@ -1049,7 +1054,7 @@ router.post(
             invoice_id: invoice.invoicenumber,
             decision: "seller",
             amount: effectiveAmount,
-            amount_disbursed: sellerShare,
+            amount_disbursed: displayAmount,
             currency: invoice.currency || "XAF",
             status: finalStatus,
             timestamp: new Date().toISOString(),
@@ -1057,7 +1062,7 @@ router.post(
         }
 
         return res.status(200).json({
-          message: `Dispute resolved. ${sellerShare.toLocaleString()} XAF released to the seller.`,
+          message: `Dispute resolved. ${displayAmount.toLocaleString()} XAF released to the seller.`,
           sellerReceives: sellerShare,
           effectiveAmount,
           status: finalStatus,
@@ -1166,8 +1171,8 @@ router.post(
               "system",
               "system",
               isFinalB
-                ? `✅ Dispute resolved by admin. Refund of ${refundAmount.toLocaleString()} XAF sent to the buyer.`
-                : `⚠️ Admin refunded ${eligibleMilestones.length} milestone(s). ${refundAmount.toLocaleString()} XAF sent to buyer. Dispute remains open for remaining milestones.`,
+                ? `✅ Dispute resolved by admin. Refund of ${displayAmount.toLocaleString()} XAF sent to the buyer.`
+                : `⚠️ Admin refunded ${eligibleMilestones.length} milestone(s). ${displayAmount.toLocaleString()} XAF sent to buyer. Dispute remains open for remaining milestones.`,
             ],
           );
         }
@@ -1189,12 +1194,12 @@ router.post(
                   ],
                   [
                     "Fonlok Fee (3%)",
-                    `-${totalFeeD.toLocaleString()} XAF`,
+                    `-${displayFee.toLocaleString()} XAF`,
                     "color:#dc2626;",
                   ],
                   [
                     "Refund Sent to You",
-                    `${refundAmount.toLocaleString()} XAF`,
+                    `${displayAmount.toLocaleString()} XAF`,
                     "font-weight:700;color:#16a34a;font-size:15px;",
                   ],
                   ["Sent To", buyerMoMo],
@@ -1245,7 +1250,7 @@ router.post(
             invoice_id: invoice.invoicenumber,
             decision: "buyer",
             amount: effectiveAmount,
-            amount_disbursed: refundAmount,
+            amount_disbursed: displayAmount,
             currency: invoice.currency || "XAF",
             status: finalStatusB,
             timestamp: new Date().toISOString(),
@@ -1253,7 +1258,7 @@ router.post(
         }
 
         return res.status(200).json({
-          message: `Dispute resolved. Refund of ${refundAmount.toLocaleString()} XAF sent to the buyer.`,
+          message: `Dispute resolved. Refund of ${displayAmount.toLocaleString()} XAF sent to the buyer.`,
           refundAmount,
           effectiveAmount,
           status: finalStatusB,
