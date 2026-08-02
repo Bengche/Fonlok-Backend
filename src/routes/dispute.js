@@ -858,11 +858,22 @@ router.post(
       if (decision === "seller") {
         // ── DECISION: Release funds to the seller ──────────────────────────
         const sellerShare = effectiveAmount - totalFeeD;
-        const sellerResult = await db.query(
-          "SELECT * FROM users WHERE id = $1",
-          [invoice.userid],
-        );
-        const seller = sellerResult.rows[0];
+        // For API invoices use the seller credentials sent by the platform —
+        // never the Fonlok users table (which holds the platform account, not the seller).
+        let seller;
+        if (invoice.created_via_api) {
+          seller = {
+            phone: invoice.seller_phone,
+            email: invoice.seller_email,
+            name:  invoice.seller_name,
+          };
+        } else {
+          const sellerResult = await db.query(
+            "SELECT * FROM users WHERE id = $1",
+            [invoice.userid],
+          );
+          seller = sellerResult.rows[0];
+        }
 
         console.log(
           `Dispute payout (seller) ${invoice.invoicenumber}: gross=${effectiveAmount}, ` +
@@ -1009,13 +1020,13 @@ router.post(
         }
 
         try {
-          const gR = await db.query(
-            "SELECT * FROM guests WHERE invoicenumber = $1",
-            [invoice.invoicenumber],
-          );
-          if (gR.rows.length > 0) {
+          // For API invoices use the buyer email from the invoice; for regular invoices use guests table.
+          const buyerNotifEmail = invoice.created_via_api
+            ? (invoice.clientemail || null)
+            : (await db.query("SELECT email FROM guests WHERE invoicenumber = $1", [invoice.invoicenumber])).rows[0]?.email;
+          if (buyerNotifEmail) {
             await sgMail.send({
-              to: gR.rows[0].email,
+              to: buyerNotifEmail,
               from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Dispute Update  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
@@ -1055,13 +1066,23 @@ router.post(
         // ── DECISION: Refund the buyer ────────────────────────────────────
         const refundAmount = effectiveAmount - totalFeeD;
 
-        const guestResult = await db.query(
-          "SELECT * FROM guests WHERE invoicenumber = $1",
-          [invoice.invoicenumber],
-        );
-        const buyer = guestResult.rows[0] ?? null;
+        // For API invoices use the buyer credentials from the invoice —
+        // never the Fonlok guests table (which holds the platform account, not the buyer).
+        let buyerMoMo, buyerEmail;
+        if (invoice.created_via_api) {
+          buyerMoMo  = invoice.buyer_phone || null;
+          buyerEmail = invoice.clientemail || null;
+        } else {
+          const guestResult = await db.query(
+            "SELECT * FROM guests WHERE invoicenumber = $1",
+            [invoice.invoicenumber],
+          );
+          const guest = guestResult.rows[0] ?? null;
+          buyerMoMo  = guest?.momo_number || null;
+          buyerEmail = guest?.email       || null;
+        }
 
-        if (!buyer?.momo_number) {
+        if (!buyerMoMo) {
           return res.status(400).json({
             message:
               "Cannot process refund: no buyer MoMo number found. Please process manually.",
@@ -1084,7 +1105,7 @@ router.post(
           {
             amount: refundAmount.toString(),
             currency: "XAF",
-            to: buyer.momo_number,
+            to: buyerMoMo,
             description: `Dispute refund  -  invoice ${invoice.invoicenumber}`,
             external_reference: `dispute-refund-${invoice.invoicenumber}-${Date.now()}`,
           },
@@ -1152,9 +1173,9 @@ router.post(
         }
 
         try {
-          if (buyer.email) {
+          if (buyerEmail) {
             await sgMail.send({
-              to: buyer.email,
+              to: buyerEmail,
               from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Refund Processed  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
@@ -1176,7 +1197,7 @@ router.post(
                     `${refundAmount.toLocaleString()} XAF`,
                     "font-weight:700;color:#16a34a;font-size:15px;",
                   ],
-                  ["Sent To", buyer.momo_number],
+                  ["Sent To", buyerMoMo],
                 ])}`,
                 { footerNote: "Fonlok Escrow dispute refund confirmation." },
               ),
@@ -1187,17 +1208,24 @@ router.post(
         }
 
         try {
-          const sR = await db.query("SELECT * FROM users WHERE id = $1", [
-            invoice.userid,
-          ]);
-          if (sR.rows.length > 0) {
+          // For API invoices use the seller credentials from the invoice; for regular invoices use users table.
+          let sellerNotifEmail, sellerNotifName;
+          if (invoice.created_via_api) {
+            sellerNotifEmail = invoice.seller_email || null;
+            sellerNotifName  = invoice.seller_name  || "Seller";
+          } else {
+            const sR = await db.query("SELECT email, name FROM users WHERE id = $1", [invoice.userid]);
+            sellerNotifEmail = sR.rows[0]?.email || null;
+            sellerNotifName  = sR.rows[0]?.name  || "Seller";
+          }
+          if (sellerNotifEmail) {
             await sgMail.send({
-              to: sR.rows[0].email,
+              to: sellerNotifEmail,
               from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
               subject: `Dispute Resolved: Refund Issued to Buyer  -  Invoice ${invoice.invoicenumber} | Fonlok`,
               html: emailWrap(
                 `<h2 style="color:#0F1F3D;margin:0 0 12px;">Dispute Resolved  -  Refund Issued to Buyer</h2>
-                <p style="color:#475569;">Hello ${sR.rows[0].name}, the admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and issued a refund to the buyer.</p>
+                <p style="color:#475569;">Hello ${sellerNotifName}, the admin reviewed the dispute for invoice <strong>${invoice.invoicenumber}</strong> and issued a refund to the buyer.</p>
                 <p style="color:#475569;">If you believe this was unfair, contact <a href="mailto:support@fonlok.com" style="color:#F59E0B;">support@fonlok.com</a>.</p>`,
                 {
                   footerNote: "Fonlok Escrow dispute resolution notification.",
