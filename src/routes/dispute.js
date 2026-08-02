@@ -16,6 +16,7 @@ import {
 } from "../utils/emailTemplate.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
+import { deliverWebhookEvent } from "./v1.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -1029,6 +1030,21 @@ router.post(
           console.error("Buyer dispute email error:", e.message);
         }
 
+        // Fire webhook so API platforms (e.g. Njimbong) are notified of the outcome
+        if (invoice.created_via_api) {
+          deliverWebhookEvent(invoice.userid, "payment.dispute_resolved", {
+            object: "event",
+            type: "payment.dispute_resolved",
+            invoice_id: invoice.invoicenumber,
+            decision: "seller",
+            amount: effectiveAmount,
+            amount_disbursed: sellerShare,
+            currency: invoice.currency || "XAF",
+            status: finalStatus,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+        }
+
         return res.status(200).json({
           message: `Dispute resolved. ${sellerShare.toLocaleString()} XAF released to the seller.`,
           sellerReceives: sellerShare,
@@ -1191,6 +1207,21 @@ router.post(
           }
         } catch (e) {
           console.error("Seller refund email error:", e.message);
+        }
+
+        // Fire webhook so API platforms (e.g. Njimbong) are notified of the outcome
+        if (invoice.created_via_api) {
+          deliverWebhookEvent(invoice.userid, "payment.dispute_resolved", {
+            object: "event",
+            type: "payment.dispute_resolved",
+            invoice_id: invoice.invoicenumber,
+            decision: "buyer",
+            amount: effectiveAmount,
+            amount_disbursed: refundAmount,
+            currency: invoice.currency || "XAF",
+            status: finalStatusB,
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
         }
 
         return res.status(200).json({
