@@ -41,7 +41,7 @@ import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import db from "../controllers/db.js";
 import logger from "../utils/logger.js";
-import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
+import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
@@ -1088,6 +1088,45 @@ router.post(
       }
 
       const inv = claimResult.rows[0];
+
+      // ── Record in disputes table (admin dashboard + moderator link) ─────
+      const adminToken = crypto.randomBytes(32).toString("hex");
+      try {
+        await db.query(
+          "INSERT INTO disputes (invoiceid, invoicenumber, opened_by, reason, admin_token, dispute_scope, disputed_milestone_ids, disputed_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+          [inv.id, inv.invoicenumber, "buyer", reason, adminToken, "full", [], Number(inv.amount)],
+        );
+      } catch (disputeInsertErr) {
+        logger.error("Failed to insert API dispute record", { error: disputeInsertErr.message });
+      }
+
+      // ── Email admin so they can moderate via the dashboard ───────────────
+      const adminLink = `${process.env.FRONTEND_URL}/admin/dispute/${adminToken}`;
+      const adminEmailMsg = {
+        to: process.env.ADMIN_EMAIL,
+        from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+        subject: `[Admin] New Dispute — Invoice ${inv.invoicenumber} | Fonlok`,
+        html: emailWrap(
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">New Dispute &mdash; Invoice ${inv.invoicenumber}</h2>
+          <p style="color:#475569;">A dispute has been raised via the API and requires your review.</p>
+          ${emailTable([
+            ["Invoice Number", inv.invoicenumber],
+            ["Invoice Name", inv.invoicename],
+            ["Amount", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;font-size:15px;"],
+            ["Opened By", "Buyer (via API)"],
+            ["Reason", reason],
+          ])}
+          <p style="color:#475569;">Click below to review all messages and make a moderation decision.</p>
+          ${emailButtonDanger(adminLink, "Review Dispute &amp; Join Chat")}`,
+          {
+            subtitle: "Admin Notification",
+            footerNote: "Keep this link private &mdash; it gives admin access to the dispute.",
+          },
+        ),
+      };
+      sgMail.send(adminEmailMsg).catch((e) =>
+        logger.error("Admin dispute email failed", { error: e.message }),
+      );
 
       logger.info("API invoice disputed", {
         invoiceNumber: inv.invoicenumber,
