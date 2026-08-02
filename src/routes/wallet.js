@@ -389,9 +389,11 @@ router.post(
     const { phone, user_ref, description } = req.body;
     const amount = parseInt(req.body.amount, 10);
 
-    // Top up Campay's 1% fee so user receives the full requested amount
-    const campayFee = Math.ceil(amount * CAMPAY_FEE_RATE);
-    const campayAmount = amount + campayFee;
+    // Gross-up so user receives exactly 'amount' after Campay deducts its fee.
+    // Campay charges ceil(gross * rate) on the amount it receives, not on 'amount',
+    // so: campayAmount = ceil(amount / (1 - rate)), campayFee = campayAmount - amount.
+    const campayAmount = Math.ceil(amount / (1 - CAMPAY_FEE_RATE));
+    const campayFee = campayAmount - amount;
 
     try {
       // Atomic debit — WHERE balance >= amount prevents overdraft
