@@ -318,16 +318,62 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
   // ═══════════════════════════════════════════════════════════════════════════
   const titleY = height - headerH - 36;
 
-  page.drawText(inv.invoicename || copy.receiptTitleFallback, {
-    x: margin,
-    y: titleY,
-    size: 17,
-    font: bold,
-    color: darkText,
+  // ── Dynamic invoice title: auto-size + word-wrap for long names ─────────
+  const titleText = inv.invoicename || copy.receiptTitleFallback;
+  const receiptNoText = `${copy.receiptNo}  ${invoice_number}`;
+  const receiptNoW = bold.widthOfTextAtSize(receiptNoText, 9);
+  const maxTitleW = contentW - receiptNoW - 24; // gap between title and receipt no
+
+  // Step 1: scale font size down from 17 until it fits on one line (min 10)
+  let titleSize = 17;
+  while (titleSize > 10 && bold.widthOfTextAtSize(titleText, titleSize) > maxTitleW) {
+    titleSize -= 0.5;
+  }
+
+  // Step 2: if still overflows at min size, word-wrap into multiple lines
+  const titleLines = [];
+  if (bold.widthOfTextAtSize(titleText, titleSize) <= maxTitleW) {
+    titleLines.push(titleText);
+  } else {
+    const words = titleText.split(" ");
+    let currentLine = "";
+    for (const word of words) {
+      const candidate = currentLine ? `${currentLine} ${word}` : word;
+      if (bold.widthOfTextAtSize(candidate, titleSize) <= maxTitleW) {
+        currentLine = candidate;
+      } else {
+        if (currentLine) titleLines.push(currentLine);
+        // Single word wider than maxTitleW — truncate with ellipsis
+        if (!currentLine && bold.widthOfTextAtSize(word, titleSize) > maxTitleW) {
+          let truncated = word;
+          while (truncated.length > 1 && bold.widthOfTextAtSize(truncated + "…", titleSize) > maxTitleW)
+            truncated = truncated.slice(0, -1);
+          titleLines.push(truncated + "…");
+          currentLine = "";
+        } else {
+          currentLine = word;
+        }
+      }
+    }
+    if (currentLine) titleLines.push(currentLine);
+  }
+
+  const titleLineH = Math.round(titleSize * 1.3);
+  const titleTotalH = (titleLines.length - 1) * titleLineH;
+
+  // Draw each title line
+  titleLines.forEach((line, i) => {
+    page.drawText(line, {
+      x: margin,
+      y: titleY - i * titleLineH,
+      size: titleSize,
+      font: bold,
+      color: darkText,
+    });
   });
 
-  // Receipt No right-aligned
-  drawRight(page, `${copy.receiptNo}  ${invoice_number}`, {
+  // Receipt No — top-right, aligned with the first title line
+  drawRight(page, receiptNoText, {
     rx: width - margin,
     y: titleY,
     size: 9,
@@ -350,9 +396,12 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
       })
     : "—";
 
+  // Dates sit below the last title line
+  const afterTitleY = titleY - titleTotalH;
+
   page.drawText(`${copy.issued} ${issuedDate}`, {
     x: margin,
-    y: titleY - 16,
+    y: afterTitleY - 16,
     size: 8.5,
     font: regular,
     color: mutedText,
@@ -360,14 +409,14 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
 
   drawRight(page, `${copy.paid} ${paidDate}`, {
     rx: width - margin,
-    y: titleY - 16,
+    y: afterTitleY - 16,
     size: 8.5,
     font: regular,
     color: mutedText,
   });
 
-  // Amber underline
-  const divY1 = titleY - 26;
+  // Amber underline — positioned below the full title block
+  const divY1 = afterTitleY - 26;
   page.drawRectangle({
     x: margin,
     y: divY1,
