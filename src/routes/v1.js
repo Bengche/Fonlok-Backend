@@ -1124,9 +1124,18 @@ router.post(
           },
         ),
       };
-      sgMail.send(adminEmailMsg).catch((e) =>
-        logger.error("Admin dispute email failed", { error: e.message }),
-      );
+      if (!process.env.ADMIN_EMAIL) {
+        logger.warn("Admin dispute email skipped: ADMIN_EMAIL env var is not set");
+      } else {
+        try {
+          await sgMail.send(adminEmailMsg);
+          logger.info("Admin dispute email sent", { invoiceNumber: inv.invoicenumber });
+        } catch (emailErr) {
+          logger.error("Admin dispute email failed", {
+            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+          });
+        }
+      }
 
       logger.info("API invoice disputed", {
         invoiceNumber: inv.invoicenumber,
