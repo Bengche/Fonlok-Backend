@@ -27,7 +27,7 @@ import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import logger from "../utils/logger.js";
-import { emailWrap, emailTable, emailButton } from "../utils/emailTemplate.js";
+import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
@@ -653,6 +653,21 @@ router.post(
           .catch(() => {});
       }
 
+      // Generate chat token, store it on the guest row, and create the chat room
+      const chatToken = crypto.randomBytes(32).toString("hex");
+      await db
+        .query(
+          "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
+          [chatToken, inv.invoicenumber],
+        )
+        .catch(() => {});
+      await db
+        .query(
+          "INSERT INTO chats (invoiceid, invoicenumber) VALUES ($1, $2) ON CONFLICT (invoicenumber) DO NOTHING",
+          [inv.id, inv.invoicenumber],
+        )
+        .catch(() => {});
+
       // Send branded buyer confirmation email with PDF receipt and release link (non-fatal)
       const releaseLink = `${process.env.BACKEND_URL}/api/verify-payout/${verificationToken}/${inv.id}`;
       if (inv.clientemail) {
@@ -708,6 +723,36 @@ router.post(
         } catch (emailErr) {
           logger.warn("Wallet escrow buyer email failed", {
             error: emailErr.message,
+          });
+        }
+      }
+
+      // Send chat invite email with chat + dispute links (non-fatal)
+      if (inv.clientemail) {
+        try {
+          const buyerChatLink    = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${chatToken}`;
+          const buyerDisputeLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${chatToken}&dispute=true`;
+          const chatCopy = buildEmailCopy("en", "chatInvite");
+          await sgMail.send({
+            to: inv.clientemail,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: chatCopy.subject(inv.invoicenumber),
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">${chatCopy.title}</h2>
+              <p style="color:#475569;">${chatCopy.body(inv.invoicenumber)}</p>
+              ${emailButton(buyerChatLink, chatCopy.chatButton)}
+              <h3 style="color:#0F1F3D;margin:20px 0 8px;">${chatCopy.problemTitle}</h3>
+              <p style="color:#475569;">${chatCopy.problemBody}</p>
+              ${emailButtonDanger(buyerDisputeLink, chatCopy.disputeButton)}`,
+              { footerNote: chatCopy.footerNote },
+            ),
+          });
+          logger.info("Wallet escrow chat invite email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
+        } catch (chatEmailErr) {
+          logger.warn("Wallet escrow chat invite email failed", {
+            error: chatEmailErr.message,
           });
         }
       }
