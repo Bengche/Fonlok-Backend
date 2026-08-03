@@ -1048,11 +1048,17 @@ router.post(
       .isLength({ max: 1000 })
       .withMessage("reason must be 1000 characters or fewer.")
       .escape(),
+    body("context")
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ max: 10000 })
+      .withMessage("context must be 10 000 characters or fewer.")
+      .escape(),
   ],
   validate,
   async (req, res) => {
     const platformUserId = req.apiKey.user_id;
-    const { invoice_id, reason } = req.body;
+    const { invoice_id, reason, context: disputeContext = null } = req.body;
 
     try {
       // Atomic status change — only succeeds if invoice is currently 'paid'.
@@ -1094,7 +1100,7 @@ router.post(
       try {
         await db.query(
           "INSERT INTO disputes (invoiceid, invoicenumber, opened_by, reason, admin_token, dispute_scope, disputed_milestone_ids, disputed_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-          [inv.id, inv.invoicenumber, "buyer", reason, adminToken, "full", [], Number(inv.amount)],
+          [inv.id, inv.invoicenumber, "buyer", disputeContext ? `${reason}\n\n--- Additional Context ---\n${disputeContext}` : reason, adminToken, "full", [], Number(inv.amount)],
         );
       } catch (disputeInsertErr) {
         logger.error("Failed to insert API dispute record", { error: disputeInsertErr.message });
@@ -1115,6 +1121,7 @@ router.post(
             ["Amount", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;font-size:15px;"],
             ["Opened By", "Buyer (via API)"],
             ["Reason", reason],
+            ...(disputeContext ? [["Full Context / Transcript", disputeContext]] : []),
           ])}
           <p style="color:#475569;">Click below to review all messages and make a moderation decision.</p>
           ${emailButtonDanger(adminLink, "Review Dispute &amp; Join Chat")}`,
@@ -1151,6 +1158,7 @@ router.post(
         amount: parseFloat(inv.amount),
         currency: inv.currency,
         reason,
+        ...(disputeContext ? { context: disputeContext } : {}),
         timestamp: new Date().toISOString(),
       }).catch(() => {});
 
