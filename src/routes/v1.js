@@ -445,12 +445,24 @@ router.get(
 
         if (!buyerToken) {
           buyerToken = crypto.randomBytes(32).toString("hex");
-          await db
+          // Try updating an existing guests row first
+          const upd = await db
             .query(
-              "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
+              "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2 RETURNING id",
               [buyerToken, inv.invoicenumber],
             )
-            .catch(() => {});
+            .catch(() => ({ rows: [] }));
+          if (upd.rows.length === 0 && inv.clientemail) {
+            // No guests row — insert one so the token has a place to live
+            await db
+              .query(
+                `INSERT INTO guests (email, momo_number, invoicenumber, chat_token)
+                 VALUES ($1, NULL, $2, $3)
+                 ON CONFLICT (email, invoicenumber) DO UPDATE SET chat_token = EXCLUDED.chat_token`,
+                [inv.clientemail, inv.invoicenumber, buyerToken],
+              )
+              .catch(() => {});
+          }
         }
         if (!sellerToken) {
           sellerToken = crypto.randomBytes(32).toString("hex");
