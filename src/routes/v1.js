@@ -440,15 +440,16 @@ router.get(
             [inv.invoicenumber],
           ),
         ]);
-        let buyerToken  = guestResult.rows[0]?.chat_token  || null;
+        let buyerToken = guestResult.rows[0]?.chat_token || null;
         let sellerToken = chatResult.rows[0]?.seller_chat_token || null;
 
         if (!buyerToken) {
           buyerToken = crypto.randomBytes(32).toString("hex");
           await db
-            .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
-              buyerToken, inv.invoicenumber,
-            ])
+            .query(
+              "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
+              [buyerToken, inv.invoicenumber],
+            )
             .catch(() => {});
         }
         if (!sellerToken) {
@@ -463,7 +464,7 @@ router.get(
             .catch(() => {});
         }
         chatLinks = {
-          buyer:  `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
+          buyer: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
           seller: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerToken}&role=seller`,
         };
       }
@@ -1186,7 +1187,7 @@ router.post(
       }
 
       // ── Create chat room and generate buyer + seller tokens ──────────────
-      const buyerChatToken  = crypto.randomBytes(32).toString("hex");
+      const buyerChatToken = crypto.randomBytes(32).toString("hex");
       const sellerChatToken = crypto.randomBytes(32).toString("hex");
       if (inv.clientemail) {
         // Ensure a guest row exists (may already exist from payment initiation)
