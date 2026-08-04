@@ -1292,6 +1292,72 @@ router.post(
         keyId: req.apiKey.id,
       });
 
+      // ── Email buyer — dispute confirmation + chat link ───────────────────
+      if (inv.clientemail) {
+        try {
+          await sgMail.send({
+            to: inv.clientemail,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: `Your dispute has been received — Invoice ${inv.invoicenumber} | Fonlok`,
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">We've received your dispute</h2>
+              <p style="color:#475569;">Your dispute for the invoice below has been registered. Fonlok has placed the funds on hold and a member of our team will review the situation and contact both parties.</p>
+              ${emailTable([
+                ["Invoice", inv.invoicenumber],
+                ["Item", inv.invoicename],
+                ["Amount held", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;"],
+                ["Dispute reason", reason],
+              ])}
+              <p style="color:#475569;">Use the button below to open the shared chat thread where you can communicate directly with the seller and with Fonlok support.</p>
+              ${emailButton(buyerChatLink, "Open Chat")}
+              <p style="color:#94a3b8;font-size:13px;margin-top:16px;">Keep this link private — it gives access to your dispute thread.</p>`,
+              {
+                subtitle: "Dispute Confirmation",
+                footerNote: "Fonlok Escrow &mdash; Funds are held securely until the dispute is resolved.",
+              },
+            ),
+          });
+          logger.info("Buyer dispute email sent", { invoiceNumber: inv.invoicenumber });
+        } catch (emailErr) {
+          logger.warn("Buyer dispute email failed (non-fatal)", {
+            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+          });
+        }
+      }
+
+      // ── Email seller — dispute notification + chat link ──────────────────
+      if (inv.seller_email) {
+        try {
+          await sgMail.send({
+            to: inv.seller_email,
+            from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+            subject: `Dispute opened on your payment — Invoice ${inv.invoicenumber} | Fonlok`,
+            html: emailWrap(
+              `<h2 style="color:#0F1F3D;margin:0 0 12px;">A dispute has been raised on your payment</h2>
+              <p style="color:#475569;">The buyer has opened a dispute on the following invoice. Fonlok has placed the funds on hold while we review the situation. Please join the chat to share your side.</p>
+              ${emailTable([
+                ["Invoice", inv.invoicenumber],
+                ["Item", inv.invoicename],
+                ["Amount in dispute", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;"],
+                ["Buyer's reason", reason],
+              ])}
+              <p style="color:#475569;">Click below to open the shared chat thread and respond to the buyer and to Fonlok support.</p>
+              ${emailButton(sellerChatLink, "Open Chat")}
+              <p style="color:#94a3b8;font-size:13px;margin-top:16px;">Keep this link private — it gives access to the dispute thread as the seller.</p>`,
+              {
+                subtitle: "Dispute Notification",
+                footerNote: "Fonlok Escrow &mdash; Funds remain held until the dispute is resolved by our team.",
+              },
+            ),
+          });
+          logger.info("Seller dispute email sent", { invoiceNumber: inv.invoicenumber });
+        } catch (emailErr) {
+          logger.warn("Seller dispute email failed (non-fatal)", {
+            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+          });
+        }
+      }
+
       // Fire webhook.
       deliverWebhookEvent(platformUserId, "payment.disputed", {
         object: "event",
