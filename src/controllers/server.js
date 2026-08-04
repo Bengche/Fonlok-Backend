@@ -877,6 +877,8 @@ app.listen(PORT, async () => {
     );
     logger.info("chats.seller_chat_token column ready");
   } catch (err) {
-    logger.warn("chats.seller_chat_token migration failed", { error: err.message });
+    logger.warn("chats.seller_chat_token migration failed", {
+      error: err.message,
+    });
   }
 });

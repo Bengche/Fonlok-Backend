@@ -146,10 +146,18 @@ router.get("/messages/:invoicenumber", async (req, res) => {
         if (!sellerChat) {
           // Log token mismatch details to help diagnose auth failures
           const [gRow, cRow] = await Promise.all([
-            db.query("SELECT chat_token FROM guests WHERE invoicenumber = $1 LIMIT 1", [invoicenumber]),
-            db.query("SELECT seller_chat_token FROM chats WHERE invoicenumber = $1 LIMIT 1", [invoicenumber]),
+            db.query(
+              "SELECT chat_token FROM guests WHERE invoicenumber = $1 LIMIT 1",
+              [invoicenumber],
+            ),
+            db.query(
+              "SELECT seller_chat_token FROM chats WHERE invoicenumber = $1 LIMIT 1",
+              [invoicenumber],
+            ),
           ]);
-          console.warn(`[chat 401] inv=${invoicenumber} provided=${token.slice(0,8)}... stored_buyer=${gRow.rows[0]?.chat_token?.slice(0,8) ?? "NONE"} stored_seller=${cRow.rows[0]?.seller_chat_token?.slice(0,8) ?? "NONE"}`);
+          console.warn(
+            `[chat 401] inv=${invoicenumber} provided=${token.slice(0, 8)}... stored_buyer=${gRow.rows[0]?.chat_token?.slice(0, 8) ?? "NONE"} stored_seller=${cRow.rows[0]?.seller_chat_token?.slice(0, 8) ?? "NONE"}`,
+          );
           return res
             .status(401)
             .json({ message: "Invalid token. Access denied." });

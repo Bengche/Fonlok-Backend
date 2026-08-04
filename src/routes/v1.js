@@ -441,7 +441,7 @@ router.get(
               [inv.invoicenumber],
             ),
           ]);
-          let buyerToken  = guestResult.rows[0]?.chat_token  || null;
+          let buyerToken = guestResult.rows[0]?.chat_token || null;
           let sellerToken = chatResult.rows[0]?.seller_chat_token || null;
 
           if (!buyerToken) {
@@ -475,11 +475,13 @@ router.get(
               .catch(() => {});
           }
           chatLinks = {
-            buyer:  `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
+            buyer: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
             seller: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerToken}&role=seller`,
           };
         } catch (chatErr) {
-          logger.warn("chat_links lazy gen failed (non-fatal)", { error: chatErr.message });
+          logger.warn("chat_links lazy gen failed (non-fatal)", {
+            error: chatErr.message,
+          });
         }
       }
 
