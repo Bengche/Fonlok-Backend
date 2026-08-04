@@ -41,7 +41,12 @@ import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import db from "../controllers/db.js";
 import logger from "../utils/logger.js";
-import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
+import {
+  emailWrap,
+  emailTable,
+  emailButton,
+  emailButtonDanger,
+} from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
@@ -885,9 +890,9 @@ router.post(
       try {
         if (inv.seller_email) {
           const emailDisplayFee = Math.round(grossAmount * 0.03);
-          const emailSellerNet  = grossAmount - emailDisplayFee;
+          const emailSellerNet = grossAmount - emailDisplayFee;
           const payoutCopy = buildEmailCopy("en", "payoutConfirmed");
-          const feeLabel   = `${payoutCopy.feeLabel} (3%)`;
+          const feeLabel = `${payoutCopy.feeLabel} (3%)`;
           const sellerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
           let sellerPdf = null;
           try {
@@ -899,7 +904,9 @@ router.post(
               disposition: "attachment",
             };
           } catch (pdfErr) {
-            logger.warn("Seller PDF gen failed (non-fatal)", { error: pdfErr.message });
+            logger.warn("Seller PDF gen failed (non-fatal)", {
+              error: pdfErr.message,
+            });
           }
           await sgMail.send({
             to: inv.seller_email,
@@ -931,17 +938,21 @@ router.post(
             ),
             ...(sellerPdf ? { attachments: [sellerPdf] } : {}),
           });
-          logger.info("Branded seller release email sent", { invoiceNumber: inv.invoicenumber });
+          logger.info("Branded seller release email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
         }
       } catch (sellerEmailErr) {
-        logger.warn("Seller release email failed", { error: sellerEmailErr.message });
+        logger.warn("Seller release email failed", {
+          error: sellerEmailErr.message,
+        });
       }
 
       // Branded buyer release email (non-fatal).
       try {
         if (inv.clientemail) {
           const emailDisplayFeeB = Math.round(grossAmount * 0.03);
-          const emailSellerNetB  = grossAmount - emailDisplayFeeB;
+          const emailSellerNetB = grossAmount - emailDisplayFeeB;
           const releasedCopy = buildEmailCopy("en", "fundsReleased");
           const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
           let buyerPdf = null;
@@ -954,7 +965,9 @@ router.post(
               disposition: "attachment",
             };
           } catch (pdfErr) {
-            logger.warn("Buyer PDF gen failed (non-fatal)", { error: pdfErr.message });
+            logger.warn("Buyer PDF gen failed (non-fatal)", {
+              error: pdfErr.message,
+            });
           }
           await sgMail.send({
             to: inv.clientemail,
@@ -967,7 +980,11 @@ router.post(
                 ["Invoice Number", inv.invoicenumber],
                 ["Invoice Name", inv.invoicename],
                 [releasedCopy.grossAmount, `${grossAmount} XAF`],
-                [releasedCopy.feeLabel, `-${emailDisplayFeeB} XAF`, "color:#dc2626;"],
+                [
+                  releasedCopy.feeLabel,
+                  `-${emailDisplayFeeB} XAF`,
+                  "color:#dc2626;",
+                ],
                 [
                   releasedCopy.sellerReceived,
                   `${emailSellerNetB} XAF`,
@@ -980,10 +997,14 @@ router.post(
             ),
             ...(buyerPdf ? { attachments: [buyerPdf] } : {}),
           });
-          logger.info("Branded buyer release email sent", { invoiceNumber: inv.invoicenumber });
+          logger.info("Branded buyer release email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
         }
       } catch (buyerEmailErr) {
-        logger.warn("Buyer release email failed", { error: buyerEmailErr.message });
+        logger.warn("Buyer release email failed", {
+          error: buyerEmailErr.message,
+        });
       }
 
       // Fire webhook — never block the response.
@@ -1100,33 +1121,52 @@ router.post(
       try {
         await db.query(
           "INSERT INTO disputes (invoiceid, invoicenumber, opened_by, reason, admin_token, dispute_scope, disputed_milestone_ids, disputed_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-          [inv.id, inv.invoicenumber, "buyer", disputeContext ? `${reason}\n\n--- Additional Context ---\n${disputeContext}` : reason, adminToken, "full", [], Number(inv.amount)],
+          [
+            inv.id,
+            inv.invoicenumber,
+            "buyer",
+            disputeContext
+              ? `${reason}\n\n--- Additional Context ---\n${disputeContext}`
+              : reason,
+            adminToken,
+            "full",
+            [],
+            Number(inv.amount),
+          ],
         );
       } catch (disputeInsertErr) {
-        logger.error("Failed to insert API dispute record", { error: disputeInsertErr.message });
+        logger.error("Failed to insert API dispute record", {
+          error: disputeInsertErr.message,
+        });
       }
 
       // ── Create chat room and generate buyer + seller tokens ──────────────
-      const buyerChatToken  = crypto.randomBytes(32).toString("hex");
+      const buyerChatToken = crypto.randomBytes(32).toString("hex");
       const sellerChatToken = crypto.randomBytes(32).toString("hex");
       if (inv.clientemail) {
-        await db.query(
-          `INSERT INTO guests (email, momo_number, invoicenumber)
+        await db
+          .query(
+            `INSERT INTO guests (email, momo_number, invoicenumber)
            VALUES ($1, NULL, $2) ON CONFLICT (email, invoicenumber) DO NOTHING`,
-          [inv.clientemail, inv.invoicenumber],
-        ).catch(() => {});
-        await db.query(
-          "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
-          [buyerChatToken, inv.invoicenumber],
-        ).catch(() => {});
+            [inv.clientemail, inv.invoicenumber],
+          )
+          .catch(() => {});
+        await db
+          .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
+            buyerChatToken,
+            inv.invoicenumber,
+          ])
+          .catch(() => {});
       }
-      await db.query(
-        `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
+      await db
+        .query(
+          `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
          VALUES ($1, $2, $3)
          ON CONFLICT (invoicenumber) DO UPDATE SET seller_chat_token = EXCLUDED.seller_chat_token`,
-        [inv.id, inv.invoicenumber, sellerChatToken],
-      ).catch(() => {});
-      const buyerChatLink  = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerChatToken}&role=buyer`;
+          [inv.id, inv.invoicenumber, sellerChatToken],
+        )
+        .catch(() => {});
+      const buyerChatLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerChatToken}&role=buyer`;
       const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerChatToken}&role=seller`;
       const adminLink = `${process.env.FRONTEND_URL}/admin/dispute/${adminToken}`;
       const adminEmailMsg = {
@@ -1139,28 +1179,41 @@ router.post(
           ${emailTable([
             ["Invoice Number", inv.invoicenumber],
             ["Invoice Name", inv.invoicename],
-            ["Amount", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;font-size:15px;"],
+            [
+              "Amount",
+              `${Number(inv.amount).toLocaleString()} ${inv.currency}`,
+              "font-weight:700;font-size:15px;",
+            ],
             ["Opened By", "Buyer (via API)"],
             ["Reason", reason],
-            ...(disputeContext ? [["Full Context / Transcript", disputeContext]] : []),
+            ...(disputeContext
+              ? [["Full Context / Transcript", disputeContext]]
+              : []),
           ])}
           <p style="color:#475569;">Click below to review all messages and make a moderation decision.</p>
           ${emailButtonDanger(adminLink, "Review Dispute &amp; Join Chat")}`,
           {
             subtitle: "Admin Notification",
-            footerNote: "Keep this link private &mdash; it gives admin access to the dispute.",
+            footerNote:
+              "Keep this link private &mdash; it gives admin access to the dispute.",
           },
         ),
       };
       if (!process.env.ADMIN_EMAIL) {
-        logger.warn("Admin dispute email skipped: ADMIN_EMAIL env var is not set");
+        logger.warn(
+          "Admin dispute email skipped: ADMIN_EMAIL env var is not set",
+        );
       } else {
         try {
           await sgMail.send(adminEmailMsg);
-          logger.info("Admin dispute email sent", { invoiceNumber: inv.invoicenumber });
+          logger.info("Admin dispute email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
         } catch (emailErr) {
           logger.error("Admin dispute email failed", {
-            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+            error: emailErr.response
+              ? JSON.stringify(emailErr.response.body)
+              : emailErr.message,
           });
         }
       }
@@ -1182,7 +1235,7 @@ router.post(
         ...(disputeContext ? { context: disputeContext } : {}),
         timestamp: new Date().toISOString(),
         chat_links: {
-          buyer:  buyerChatLink,
+          buyer: buyerChatLink,
           seller: sellerChatLink,
         },
       }).catch(() => {});
@@ -1196,7 +1249,7 @@ router.post(
           "Invoice flagged as disputed. Funds are held. Share the chat links below with each party so they can communicate with Fonlok support.",
         disputed_at: new Date().toISOString(),
         chat_links: {
-          buyer:  buyerChatLink,
+          buyer: buyerChatLink,
           seller: sellerChatLink,
         },
       });
