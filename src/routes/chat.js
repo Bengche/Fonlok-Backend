@@ -98,6 +98,10 @@ const upload = multer({
   },
 });
 
+// Ensure seller_chat_token column exists (for API-based dispute chats)
+db.query("ALTER TABLE chats ADD COLUMN IF NOT EXISTS seller_chat_token VARCHAR(64)")
+  .catch((e) => console.warn("chats.seller_chat_token migration:", e.message));
+
 // --- HELPER: Verify that a buyer's token matches the invoice ---
 const verifyBuyerToken = async (invoicenumber, token) => {
   const result = await db.query(
@@ -105,6 +109,15 @@ const verifyBuyerToken = async (invoicenumber, token) => {
     [invoicenumber, token],
   );
   return result.rows[0] || null; // returns the guest row if token is valid, or null
+};
+
+// --- HELPER: Verify that a seller's token matches the chat room ---
+const verifySellerToken = async (invoicenumber, token) => {
+  const result = await db.query(
+    "SELECT * FROM chats WHERE invoicenumber = $1 AND seller_chat_token = $2",
+    [invoicenumber, token],
+  );
+  return result.rows[0] || null;
 };
 
 // --- ROUTE 1: GET all messages for a chat ---
@@ -128,18 +141,20 @@ router.get("/messages/:invoicenumber", async (req, res) => {
 
     const chat = chatResult.rows[0];
 
-    // Check who is requesting:
-    // If a token is provided, it's the buyer
+    // Check who is requesting.
+    // If a token is provided, check buyer token first, then seller token.
     if (token) {
       const guest = await verifyBuyerToken(invoicenumber, token);
       if (!guest) {
-        return res
-          .status(401)
-          .json({ message: "Invalid token. Access denied." });
+        const sellerChat = await verifySellerToken(invoicenumber, token);
+        if (!sellerChat) {
+          return res
+            .status(401)
+            .json({ message: "Invalid token. Access denied." });
+        }
       }
     }
-    // If no token, we trust it's the seller (they are authenticated on the frontend)
-    // You can add authMiddleware here later if you want stricter seller verification
+    // If no token, the seller is authenticated on the frontend via session.
 
     // Fetch all messages for this chat, ordered oldest first
     const messagesResult = await db.query(
@@ -207,13 +222,29 @@ router.post(
         }
         sender_email = guest.email;
       } else if (sender_type === "seller") {
-        // Get seller email from invoices -> users
-        const invoiceResult = await db.query(
-          "SELECT users.email FROM invoices JOIN users ON invoices.userid = users.id WHERE invoices.invoicenumber = $1",
-          [invoicenumber],
-        );
-        if (invoiceResult.rows.length > 0) {
-          sender_email = invoiceResult.rows[0].email;
+        if (token) {
+          // API invoice seller: verify via seller_chat_token stored in the chats row
+          const sellerChat = await verifySellerToken(invoicenumber, token);
+          if (!sellerChat) {
+            return res
+              .status(401)
+              .json({ message: "Invalid token. Access denied." });
+          }
+          // Use the invoice-level seller email (not the platform-account email)
+          const invRow = await db.query(
+            "SELECT seller_email FROM invoices WHERE invoicenumber = $1",
+            [invoicenumber],
+          );
+          sender_email = invRow.rows[0]?.seller_email || "";
+        } else {
+          // Regular seller: authenticated via Fonlok account session
+          const invoiceResult = await db.query(
+            "SELECT users.email FROM invoices JOIN users ON invoices.userid = users.id WHERE invoices.invoicenumber = $1",
+            [invoicenumber],
+          );
+          if (invoiceResult.rows.length > 0) {
+            sender_email = invoiceResult.rows[0].email;
+          }
         }
       }
 
@@ -286,12 +317,27 @@ router.post(
         }
         sender_email = guest.email;
       } else if (sender_type === "seller") {
-        const invoiceResult = await db.query(
-          "SELECT users.email FROM invoices JOIN users ON invoices.userid = users.id WHERE invoices.invoicenumber = $1",
-          [invoicenumber],
-        );
-        if (invoiceResult.rows.length > 0) {
-          sender_email = invoiceResult.rows[0].email;
+        if (token) {
+          // API invoice seller: verify via seller_chat_token
+          const sellerChat = await verifySellerToken(invoicenumber, token);
+          if (!sellerChat) {
+            return res
+              .status(401)
+              .json({ message: "Invalid token. Access denied." });
+          }
+          const invRow = await db.query(
+            "SELECT seller_email FROM invoices WHERE invoicenumber = $1",
+            [invoicenumber],
+          );
+          sender_email = invRow.rows[0]?.seller_email || "";
+        } else {
+          const invoiceResult = await db.query(
+            "SELECT users.email FROM invoices JOIN users ON invoices.userid = users.id WHERE invoices.invoicenumber = $1",
+            [invoicenumber],
+          );
+          if (invoiceResult.rows.length > 0) {
+            sender_email = invoiceResult.rows[0].email;
+          }
         }
       }
 

@@ -1106,7 +1106,28 @@ router.post(
         logger.error("Failed to insert API dispute record", { error: disputeInsertErr.message });
       }
 
-      // ── Email admin so they can moderate via the dashboard ───────────────
+      // ── Create chat room and generate buyer + seller tokens ──────────────
+      const buyerChatToken  = crypto.randomBytes(32).toString("hex");
+      const sellerChatToken = crypto.randomBytes(32).toString("hex");
+      if (inv.clientemail) {
+        await db.query(
+          `INSERT INTO guests (email, momo_number, invoicenumber)
+           VALUES ($1, NULL, $2) ON CONFLICT (email, invoicenumber) DO NOTHING`,
+          [inv.clientemail, inv.invoicenumber],
+        ).catch(() => {});
+        await db.query(
+          "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
+          [buyerChatToken, inv.invoicenumber],
+        ).catch(() => {});
+      }
+      await db.query(
+        `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (invoicenumber) DO UPDATE SET seller_chat_token = EXCLUDED.seller_chat_token`,
+        [inv.id, inv.invoicenumber, sellerChatToken],
+      ).catch(() => {});
+      const buyerChatLink  = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerChatToken}&role=buyer`;
+      const sellerChatLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerChatToken}&role=seller`;
       const adminLink = `${process.env.FRONTEND_URL}/admin/dispute/${adminToken}`;
       const adminEmailMsg = {
         to: process.env.ADMIN_EMAIL,
@@ -1160,6 +1181,10 @@ router.post(
         reason,
         ...(disputeContext ? { context: disputeContext } : {}),
         timestamp: new Date().toISOString(),
+        chat_links: {
+          buyer:  buyerChatLink,
+          seller: sellerChatLink,
+        },
       }).catch(() => {});
 
       return res.json({
@@ -1168,8 +1193,12 @@ router.post(
         status: "disputed",
         reason,
         message:
-          "Invoice flagged as disputed. Funds are held. Contact support@fonlok.com with the invoice_id to resolve.",
+          "Invoice flagged as disputed. Funds are held. Share the chat links below with each party so they can communicate with Fonlok support.",
         disputed_at: new Date().toISOString(),
+        chat_links: {
+          buyer:  buyerChatLink,
+          seller: sellerChatLink,
+        },
       });
     } catch (err) {
       logger.error("Unexpected error during API dispute", {
