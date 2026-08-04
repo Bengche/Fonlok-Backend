@@ -511,7 +511,10 @@ router.get(
         ...(chatLinks ? { chat_links: chatLinks } : {}),
       });
     } catch (err) {
-      logger.error("Failed to fetch invoice via API", { error: err.message, stack: err.stack });
+      logger.error("Failed to fetch invoice via API", {
+        error: err.message,
+        stack: err.stack,
+      });
       return res.status(500).json({
         error: "server_error",
         message: "Failed to retrieve invoice.",
