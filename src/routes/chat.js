@@ -98,11 +98,6 @@ const upload = multer({
   },
 });
 
-// Ensure seller_chat_token column exists (for API-based dispute chats)
-db.query(
-  "ALTER TABLE chats ADD COLUMN IF NOT EXISTS seller_chat_token VARCHAR(64)",
-).catch((e) => console.warn("chats.seller_chat_token migration:", e.message));
-
 // --- HELPER: Verify that a buyer's token matches the invoice ---
 const verifyBuyerToken = async (invoicenumber, token) => {
   const result = await db.query(

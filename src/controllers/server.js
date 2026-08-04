@@ -869,4 +869,14 @@ app.listen(PORT, async () => {
   } catch (err) {
     logger.warn("wallet tables migration failed", { error: err.message });
   }
+
+  // seller_chat_token on chats — required for API dispute chat access
+  try {
+    await db.query(
+      "ALTER TABLE chats ADD COLUMN IF NOT EXISTS seller_chat_token VARCHAR(64)",
+    );
+    logger.info("chats.seller_chat_token column ready");
+  } catch (err) {
+    logger.warn("chats.seller_chat_token migration failed", { error: err.message });
+  }
 });

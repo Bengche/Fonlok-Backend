@@ -430,55 +430,57 @@ router.get(
       // (tokens not yet generated) — tokens are lazily created on first GET.
       let chatLinks = null;
       if (inv.status === "disputed") {
-        const [guestResult, chatResult] = await Promise.all([
-          db.query(
-            "SELECT chat_token FROM guests WHERE invoicenumber = $1 AND chat_token IS NOT NULL LIMIT 1",
-            [inv.invoicenumber],
-          ),
-          db.query(
-            "SELECT seller_chat_token FROM chats WHERE invoicenumber = $1 AND seller_chat_token IS NOT NULL LIMIT 1",
-            [inv.invoicenumber],
-          ),
-        ]);
-        let buyerToken = guestResult.rows[0]?.chat_token || null;
-        let sellerToken = chatResult.rows[0]?.seller_chat_token || null;
+        try {
+          const [guestResult, chatResult] = await Promise.all([
+            db.query(
+              "SELECT chat_token FROM guests WHERE invoicenumber = $1 AND chat_token IS NOT NULL LIMIT 1",
+              [inv.invoicenumber],
+            ),
+            db.query(
+              "SELECT seller_chat_token FROM chats WHERE invoicenumber = $1 AND seller_chat_token IS NOT NULL LIMIT 1",
+              [inv.invoicenumber],
+            ),
+          ]);
+          let buyerToken  = guestResult.rows[0]?.chat_token  || null;
+          let sellerToken = chatResult.rows[0]?.seller_chat_token || null;
 
-        if (!buyerToken) {
-          buyerToken = crypto.randomBytes(32).toString("hex");
-          // Try updating an existing guests row first
-          const upd = await db
-            .query(
-              "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2 RETURNING id",
-              [buyerToken, inv.invoicenumber],
-            )
-            .catch(() => ({ rows: [] }));
-          if (upd.rows.length === 0 && inv.clientemail) {
-            // No guests row — insert one so the token has a place to live
+          if (!buyerToken) {
+            buyerToken = crypto.randomBytes(32).toString("hex");
+            const upd = await db
+              .query(
+                "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2 RETURNING id",
+                [buyerToken, inv.invoicenumber],
+              )
+              .catch(() => ({ rows: [] }));
+            if (upd.rows.length === 0 && inv.clientemail) {
+              await db
+                .query(
+                  `INSERT INTO guests (email, momo_number, invoicenumber, chat_token)
+                   VALUES ($1, NULL, $2, $3)
+                   ON CONFLICT (email, invoicenumber) DO UPDATE SET chat_token = EXCLUDED.chat_token`,
+                  [inv.clientemail, inv.invoicenumber, buyerToken],
+                )
+                .catch(() => {});
+            }
+          }
+          if (!sellerToken) {
+            sellerToken = crypto.randomBytes(32).toString("hex");
             await db
               .query(
-                `INSERT INTO guests (email, momo_number, invoicenumber, chat_token)
-                 VALUES ($1, NULL, $2, $3)
-                 ON CONFLICT (email, invoicenumber) DO UPDATE SET chat_token = EXCLUDED.chat_token`,
-                [inv.clientemail, inv.invoicenumber, buyerToken],
+                `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (invoicenumber) DO UPDATE SET seller_chat_token = EXCLUDED.seller_chat_token`,
+                [inv.id, inv.invoicenumber, sellerToken],
               )
               .catch(() => {});
           }
+          chatLinks = {
+            buyer:  `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
+            seller: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerToken}&role=seller`,
+          };
+        } catch (chatErr) {
+          logger.warn("chat_links lazy gen failed (non-fatal)", { error: chatErr.message });
         }
-        if (!sellerToken) {
-          sellerToken = crypto.randomBytes(32).toString("hex");
-          await db
-            .query(
-              `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (invoicenumber) DO UPDATE SET seller_chat_token = EXCLUDED.seller_chat_token`,
-              [inv.id, inv.invoicenumber, sellerToken],
-            )
-            .catch(() => {});
-        }
-        chatLinks = {
-          buyer: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
-          seller: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerToken}&role=seller`,
-        };
       }
 
       return res.json({
