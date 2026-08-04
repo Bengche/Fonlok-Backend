@@ -1305,7 +1305,11 @@ router.post(
               ${emailTable([
                 ["Invoice", inv.invoicenumber],
                 ["Item", inv.invoicename],
-                ["Amount held", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;"],
+                [
+                  "Amount held",
+                  `${Number(inv.amount).toLocaleString()} ${inv.currency}`,
+                  "font-weight:700;",
+                ],
                 ["Dispute reason", reason],
               ])}
               <p style="color:#475569;">Use the button below to open the shared chat thread where you can communicate directly with the seller and with Fonlok support.</p>
@@ -1313,14 +1317,19 @@ router.post(
               <p style="color:#94a3b8;font-size:13px;margin-top:16px;">Keep this link private — it gives access to your dispute thread.</p>`,
               {
                 subtitle: "Dispute Confirmation",
-                footerNote: "Fonlok Escrow &mdash; Funds are held securely until the dispute is resolved.",
+                footerNote:
+                  "Fonlok Escrow &mdash; Funds are held securely until the dispute is resolved.",
               },
             ),
           });
-          logger.info("Buyer dispute email sent", { invoiceNumber: inv.invoicenumber });
+          logger.info("Buyer dispute email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
         } catch (emailErr) {
           logger.warn("Buyer dispute email failed (non-fatal)", {
-            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+            error: emailErr.response
+              ? JSON.stringify(emailErr.response.body)
+              : emailErr.message,
           });
         }
       }
@@ -1338,7 +1347,11 @@ router.post(
               ${emailTable([
                 ["Invoice", inv.invoicenumber],
                 ["Item", inv.invoicename],
-                ["Amount in dispute", `${Number(inv.amount).toLocaleString()} ${inv.currency}`, "font-weight:700;"],
+                [
+                  "Amount in dispute",
+                  `${Number(inv.amount).toLocaleString()} ${inv.currency}`,
+                  "font-weight:700;",
+                ],
                 ["Buyer's reason", reason],
               ])}
               <p style="color:#475569;">Click below to open the shared chat thread and respond to the buyer and to Fonlok support.</p>
@@ -1346,14 +1359,19 @@ router.post(
               <p style="color:#94a3b8;font-size:13px;margin-top:16px;">Keep this link private — it gives access to the dispute thread as the seller.</p>`,
               {
                 subtitle: "Dispute Notification",
-                footerNote: "Fonlok Escrow &mdash; Funds remain held until the dispute is resolved by our team.",
+                footerNote:
+                  "Fonlok Escrow &mdash; Funds remain held until the dispute is resolved by our team.",
               },
             ),
           });
-          logger.info("Seller dispute email sent", { invoiceNumber: inv.invoicenumber });
+          logger.info("Seller dispute email sent", {
+            invoiceNumber: inv.invoicenumber,
+          });
         } catch (emailErr) {
           logger.warn("Seller dispute email failed (non-fatal)", {
-            error: emailErr.response ? JSON.stringify(emailErr.response.body) : emailErr.message,
+            error: emailErr.response
+              ? JSON.stringify(emailErr.response.body)
+              : emailErr.message,
           });
         }
       }
