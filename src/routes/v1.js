@@ -410,7 +410,7 @@ router.get(
         `SELECT id, invoicenumber, invoicename, clientemail, currency, amount,
                 invoicelink, description, expires_at, external_reference,
                 status, seller_name, seller_email, seller_phone, buyer_phone,
-                createdat AS created_at, paidat AS paid_at, deliveredat AS delivered_at
+                createdat AS created_at, paid_at, delivered_at
          FROM invoices
          WHERE invoicenumber = $1 AND userid = $2`,
         [invoice_id, sellerId],
@@ -518,7 +518,6 @@ router.get(
       return res.status(500).json({
         error: "server_error",
         message: "Failed to retrieve invoice.",
-        _debug: err.message, // temporary — remove after diagnosis
       });
     }
   },
