@@ -424,6 +424,50 @@ router.get(
       }
 
       const inv = result.rows[0];
+
+      // For disputed invoices, ensure chat tokens exist and return the links.
+      // This handles both new disputes (tokens already set) and old disputes
+      // (tokens not yet generated) — tokens are lazily created on first GET.
+      let chatLinks = null;
+      if (inv.status === "disputed") {
+        const [guestResult, chatResult] = await Promise.all([
+          db.query(
+            "SELECT chat_token FROM guests WHERE invoicenumber = $1 AND chat_token IS NOT NULL LIMIT 1",
+            [inv.invoicenumber],
+          ),
+          db.query(
+            "SELECT seller_chat_token FROM chats WHERE invoicenumber = $1 AND seller_chat_token IS NOT NULL LIMIT 1",
+            [inv.invoicenumber],
+          ),
+        ]);
+        let buyerToken  = guestResult.rows[0]?.chat_token  || null;
+        let sellerToken = chatResult.rows[0]?.seller_chat_token || null;
+
+        if (!buyerToken) {
+          buyerToken = crypto.randomBytes(32).toString("hex");
+          await db
+            .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
+              buyerToken, inv.invoicenumber,
+            ])
+            .catch(() => {});
+        }
+        if (!sellerToken) {
+          sellerToken = crypto.randomBytes(32).toString("hex");
+          await db
+            .query(
+              `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (invoicenumber) DO UPDATE SET seller_chat_token = EXCLUDED.seller_chat_token`,
+              [inv.id, inv.invoicenumber, sellerToken],
+            )
+            .catch(() => {});
+        }
+        chatLinks = {
+          buyer:  `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${buyerToken}&role=buyer`,
+          seller: `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${sellerToken}&role=seller`,
+        };
+      }
+
       return res.json({
         object: "invoice",
         id: inv.invoicenumber,
@@ -447,6 +491,7 @@ router.get(
         created_at: inv.created_at,
         paid_at: inv.paid_at,
         delivered_at: inv.delivered_at,
+        ...(chatLinks ? { chat_links: chatLinks } : {}),
       });
     } catch (err) {
       logger.error("Failed to fetch invoice via API", { error: err.message });
@@ -1141,9 +1186,10 @@ router.post(
       }
 
       // ── Create chat room and generate buyer + seller tokens ──────────────
-      const buyerChatToken = crypto.randomBytes(32).toString("hex");
+      const buyerChatToken  = crypto.randomBytes(32).toString("hex");
       const sellerChatToken = crypto.randomBytes(32).toString("hex");
       if (inv.clientemail) {
+        // Ensure a guest row exists (may already exist from payment initiation)
         await db
           .query(
             `INSERT INTO guests (email, momo_number, invoicenumber)
@@ -1151,13 +1197,15 @@ router.post(
             [inv.clientemail, inv.invoicenumber],
           )
           .catch(() => {});
-        await db
-          .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
-            buyerChatToken,
-            inv.invoicenumber,
-          ])
-          .catch(() => {});
       }
+      // Always update the token — a guest row may exist from payment initiation
+      // even when clientemail is null on the invoice (buyer_email was used instead).
+      await db
+        .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
+          buyerChatToken,
+          inv.invoicenumber,
+        ])
+        .catch(() => {});
       await db
         .query(
           `INSERT INTO chats (invoiceid, invoicenumber, seller_chat_token)
