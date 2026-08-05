@@ -971,6 +971,7 @@ router.post(
           } catch (pdfErr) {
             logger.warn("Seller PDF gen failed (non-fatal)", {
               error: pdfErr.message,
+              stack: pdfErr.stack,
             });
           }
           await sgMail.send({
@@ -1032,6 +1033,7 @@ router.post(
           } catch (pdfErr) {
             logger.warn("Buyer PDF gen failed (non-fatal)", {
               error: pdfErr.message,
+              stack: pdfErr.stack,
             });
           }
           await sgMail.send({

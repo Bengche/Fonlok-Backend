@@ -16,7 +16,7 @@ dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // --- THE SHARED PAYOUT FUNCTION (Core Logic) ---
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // FEE CONSTANTS
 //
 // When a referral is involved:
@@ -29,18 +29,18 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 //
 // In both cases the seller always receives gross - 2%.  The only difference is
 // where the 0.5% portion goes when a referrer exists.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const PLATFORM_FEE_RATE = 0.015; // 1.5% — Fonlok’s cut
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+const PLATFORM_FEE_RATE = 0.015; // 1.5% â€” Fonlokâ€™s cut
 const REFERRAL_FEE_RATE = 0.005; // 0.5% &mdash; referrer's cut (only when referral exists)
-const TOTAL_FEE_RATE = 0.02; // 2.0% — Fonlok’s deduction (Campay takes their 1% separately)
+const TOTAL_FEE_RATE = 0.02; // 2.0% â€” Fonlokâ€™s deduction (Campay takes their 1% separately)
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // renderPage({ type, title, body, ctaHref?, ctaLabel?, warningBox?, note? })
 //
 // Generates a consistent, branded HTML page for all server-rendered buyer-
 // facing confirmation and status screens (fund release, error pages, etc.).
 // type: "success" | "error" | "warning" | "info"
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function renderPage({
   type = "info",
   title,
@@ -106,7 +106,7 @@ function renderPage({
 </html>`;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // executePayout(invoiceId)
 // Shared core for Method 1 (code-based release).
 // invoiceId = invoices.id (the numeric primary key)
@@ -118,11 +118,11 @@ function renderPage({
 // proceed; the other gets zero rows and throws immediately &mdash; before any money
 // moves.  This eliminates the TOCTOU window that previously existed between
 // the "already paid?" read and the "mark as paid" write.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const executePayout = async (invoiceId) => {
-  // â”€â”€ Step 1: Atomically claim the payout slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 1: Atomically claim the payout slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // UPDATE returns the row only when is_used was false; any concurrent request
-  // finds is_used already true and gets back zero rows â†’ throws before Campay.
+  // finds is_used already true and gets back zero rows Ã¢â€ â€™ throws before Campay.
   const lockResult = await db.query(
     `UPDATE confirmation_codes
         SET is_used = true
@@ -137,7 +137,7 @@ const executePayout = async (invoiceId) => {
     );
   }
 
-  // â”€â”€ Step 2: Fetch invoice & seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 2: Fetch invoice & seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const invoiceRes = await db.query("SELECT * FROM invoices WHERE id = $1", [
     invoiceId,
   ]);
@@ -152,7 +152,7 @@ const executePayout = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
-  // ── Effective payout details ──────────────────────────────────────────────
+  // â”€â”€ Effective payout details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // For API-created invoices (e.g. Njimbong) money and emails must go to the
   // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
   // account (invoiceUser). For native invoices invoiceUser IS the seller.
@@ -161,7 +161,7 @@ const executePayout = async (invoiceId) => {
   const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
   const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
 
-  // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 3: Determine referral and calculate fees Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Check for a referrer BEFORE computing fees so the correct split is used.
   const referrerCheck = await db.query(
     "SELECT referred_by FROM users WHERE id = $1",
@@ -176,7 +176,7 @@ const executePayout = async (invoiceId) => {
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
-  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% — Fonlok's net
+  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% â€” Fonlok's net
   const sellerReceives = grossAmount - totalFee; // always gross - 2% (Campay takes 1% on top)
 
   console.log(
@@ -185,7 +185,7 @@ const executePayout = async (invoiceId) => {
       `referralEarning=${referralEarning}, sellerReceives=${sellerReceives}`,
   );
 
-  // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 4: Transfer to seller via Campay Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const campayAuthLegacy1 = await axios.post(
     `${process.env.CAMPAY_BASE_URL}token/`,
     {
@@ -205,7 +205,7 @@ const executePayout = async (invoiceId) => {
     { headers: { Authorization: `Token ${campayAuthLegacy1.data.token}` } },
   );
 
-  // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5: Record the payout & mark invoice completed Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   await db.query(
     "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
     [
@@ -224,7 +224,7 @@ const executePayout = async (invoiceId) => {
     invoiceId,
   ]);
 
-  // â”€â”€ Step 5b: Fire payout.completed webhook for API-created invoices
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5b: Fire payout.completed webhook for API-created invoices
   if (isApiInvoice) {
     deliverWebhookEvent(invoiceRow.userid, "payout.completed", {
       object: "event",
@@ -242,7 +242,7 @@ const executePayout = async (invoiceId) => {
     }).catch(() => {});
   }
 
-  // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 6: Notify the seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Skip for API invoices: the actual seller is a third party (not Njimbong).
   if (!isApiInvoice) {
     notifyUser(
@@ -254,7 +254,7 @@ const executePayout = async (invoiceId) => {
     );
   }
 
-  // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new Ã¢â€â‚¬Ã¢â€â‚¬
   // The earnings row is the single source of truth.  INSERT with RETURNING
   // tells us whether a genuinely new row was written (vs a conflict/no-op).
   // The balance UPDATE only runs when a new row was actually inserted, so a
@@ -281,23 +281,23 @@ const executePayout = async (invoiceId) => {
           [referralEarning, referrerId],
         );
         console.log(
-          `âœ… Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
+          `Ã¢Å“â€¦ Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
             `Fonlok net fee: ${fonlokNet} XAF (1.5%).`,
         );
       } else {
         console.log(
-          `â„¹ï¸ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
+          `Ã¢â€žÂ¹Ã¯Â¸Â Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
         );
       }
     } catch (referralErr) {
       console.error(
-        "âš ï¸ Referral credit error (payout still succeeded):",
+        "Ã¢Å¡Â Ã¯Â¸Â Referral credit error (payout still succeeded):",
         referralErr.message,
       );
     }
   }
 
-  // â”€â”€ Step 8: Send PDF receipt to seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 8: Send PDF receipt to seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
@@ -313,8 +313,9 @@ const executePayout = async (invoiceId) => {
     };
   } catch (pdfErr) {
     console.error(
-      "âš ï¸ Could not generate seller receipt PDF:",
+      "Ã¢Å¡Â Ã¯Â¸Â Could not generate seller receipt PDF:",
       pdfErr.message,
+      pdfErr.stack,
     );
   }
 
@@ -369,15 +370,15 @@ const executePayout = async (invoiceId) => {
 
   try {
     await sgMail.send(sellerReceiptMsg);
-    console.log("âœ… Seller receipt email sent.");
+    console.log("Ã¢Å“â€¦ Seller receipt email sent.");
   } catch (emailErr) {
     console.error(
-      "âŒ Seller Receipt Email Error:",
+      "Ã¢ÂÅ’ Seller Receipt Email Error:",
       emailErr.response ? emailErr.response.body : emailErr.message,
     );
   }
 
-  // ── Step 9: Buyer release confirmation email with review link (non-fatal) ──
+  // â”€â”€ Step 9: Buyer release confirmation email with review link (non-fatal) â”€â”€
   try {
     const buyerResult = await db.query(
       "SELECT email, user_id FROM guests WHERE invoicenumber = $1 LIMIT 1",
@@ -401,7 +402,7 @@ const executePayout = async (invoiceId) => {
           disposition: "attachment",
         };
       } catch (pdfErr) {
-        console.error("⚠️ Could not generate buyer release receipt PDF:", pdfErr.message);
+        console.error("âš ï¸ Could not generate buyer release receipt PDF:", pdfErr.message);
       }
       await sgMail.send({
         to: buyer.email,
@@ -412,7 +413,7 @@ const executePayout = async (invoiceId) => {
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
             [
-              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+              buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
               invoiceRow.invoicenumber,
             ],
             [
@@ -454,7 +455,7 @@ const executePayout = async (invoiceId) => {
 
 // FUNCTION WITH LINK
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // executePayoutLink(invoiceId)
 // Shared core for Method 2 (email-link release).
 //
@@ -463,9 +464,9 @@ const executePayout = async (invoiceId) => {
 // know it is the correct invoice for this token.
 //
 // RACE-CONDITION PROTECTION: identical atomic-lock pattern to executePayout.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const executePayoutLink = async (invoiceId) => {
-  // â”€â”€ Step 1: Atomically claim the payout slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 1: Atomically claim the payout slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const lockResult = await db.query(
     `UPDATE confirmation_codes
         SET is_used = true
@@ -480,7 +481,7 @@ const executePayoutLink = async (invoiceId) => {
     );
   }
 
-  // â”€â”€ Step 2: Fetch invoice & seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 2: Fetch invoice & seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const invoiceRes = await db.query("SELECT * FROM invoices WHERE id = $1", [
     invoiceId,
   ]);
@@ -495,7 +496,7 @@ const executePayoutLink = async (invoiceId) => {
   if (userResult.rows.length === 0) throw new Error("Seller account not found");
   const invoiceUser = userResult.rows[0];
 
-  // ── Effective payout details ──────────────────────────────────────────────
+  // â”€â”€ Effective payout details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // For API-created invoices (e.g. Njimbong) money and emails must go to the
   // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
   // account (invoiceUser). For native invoices invoiceUser IS the seller.
@@ -504,7 +505,7 @@ const executePayoutLink = async (invoiceId) => {
   const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
   const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
 
-  // â”€â”€ Step 3: Determine referral and calculate fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 3: Determine referral and calculate fees Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const referrerCheck = await db.query(
     "SELECT referred_by FROM users WHERE id = $1",
     [sellerId],
@@ -516,7 +517,7 @@ const executePayoutLink = async (invoiceId) => {
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
-  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% — Fonlok's net
+  const fonlokNet = totalFee - referralEarning; // 1.5% or 2% â€” Fonlok's net
   const sellerReceives = grossAmount - totalFee; // gross - 2%
 
   console.log(
@@ -525,7 +526,7 @@ const executePayoutLink = async (invoiceId) => {
       `referralEarning=${referralEarning}, sellerReceives=${sellerReceives}`,
   );
 
-  // â”€â”€ Step 4: Transfer to seller via Campay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 4: Transfer to seller via Campay Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const campayAuthLegacy2 = await axios.post(
     `${process.env.CAMPAY_BASE_URL}token/`,
     {
@@ -545,7 +546,7 @@ const executePayoutLink = async (invoiceId) => {
     { headers: { Authorization: `Token ${campayAuthLegacy2.data.token}` } },
   );
 
-  // â”€â”€ Step 5: Record the payout & mark invoice completed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5: Record the payout & mark invoice completed Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   await db.query(
     "INSERT INTO payouts (userid, amount, method, status, invoice_id, invoice_number) VALUES ($1, $2, $3, $4, $5, $6)",
     [
@@ -561,7 +562,7 @@ const executePayoutLink = async (invoiceId) => {
     invoiceId,
   ]);
 
-  // â”€â”€ Step 5b: Fire payout.completed webhook for API-created invoices
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5b: Fire payout.completed webhook for API-created invoices
   if (isApiInvoice) {
     deliverWebhookEvent(invoiceRow.userid, "payout.completed", {
       object: "event",
@@ -579,7 +580,7 @@ const executePayoutLink = async (invoiceId) => {
     }).catch(() => {});
   }
 
-  // â”€â”€ Step 6: Notify the seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 6: Notify the seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Skip for API invoices: the actual seller is a third party (not Njimbong).
   if (!isApiInvoice) {
     notifyUser(
@@ -591,7 +592,7 @@ const executePayoutLink = async (invoiceId) => {
     );
   }
 
-  // â”€â”€ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 7: Credit referral earnings &mdash; INSERT first, balance only if new Ã¢â€â‚¬Ã¢â€â‚¬
   if (hasReferral && referralEarning > 0) {
     try {
       const earningsInsert = await db.query(
@@ -614,23 +615,23 @@ const executePayoutLink = async (invoiceId) => {
           [referralEarning, referrerId],
         );
         console.log(
-          `âœ… Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
+          `Ã¢Å“â€¦ Referral earning of ${referralEarning} XAF (0.5%) credited to user ${referrerId}. ` +
             `Fonlok net fee: ${fonlokNet} XAF (1.5%).`,
         );
       } else {
         console.log(
-          `â„¹ï¸ Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
+          `Ã¢â€žÂ¹Ã¯Â¸Â Referral earnings for invoice ${invoiceRow.invoicenumber} already recorded &mdash; balance not double-credited.`,
         );
       }
     } catch (referralErr) {
       console.error(
-        "âš ï¸ Referral credit error (payout still succeeded):",
+        "Ã¢Å¡Â Ã¯Â¸Â Referral credit error (payout still succeeded):",
         referralErr.message,
       );
     }
   }
 
-  // â”€â”€ Step 8: Send PDF receipt to seller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 8: Send PDF receipt to seller Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const sellerLanguage = await getUserEmailLanguageById(invoiceUser.id);
   let sellerPdfAttachment = null;
   try {
@@ -646,8 +647,9 @@ const executePayoutLink = async (invoiceId) => {
     };
   } catch (pdfErr) {
     console.error(
-      "âš ï¸ Could not generate seller receipt PDF:",
+      "Ã¢Å¡Â Ã¯Â¸Â Could not generate seller receipt PDF:",
       pdfErr.message,
+      pdfErr.stack,
     );
   }
 
@@ -702,15 +704,15 @@ const executePayoutLink = async (invoiceId) => {
 
   try {
     await sgMail.send(sellerReceiptMsg);
-    console.log("âœ… Seller receipt email sent.");
+    console.log("Ã¢Å“â€¦ Seller receipt email sent.");
   } catch (error) {
     console.error(
-      "âŒ Seller Receipt Email Error:",
+      "Ã¢ÂÅ’ Seller Receipt Email Error:",
       error.response ? error.response.body : error.message,
     );
   }
 
-  // ── Step 9: Buyer release confirmation email with review link (non-fatal) ──
+  // â”€â”€ Step 9: Buyer release confirmation email with review link (non-fatal) â”€â”€
   try {
     const buyerResult = await db.query(
       "SELECT email, user_id FROM guests WHERE invoicenumber = $1 LIMIT 1",
@@ -734,7 +736,7 @@ const executePayoutLink = async (invoiceId) => {
           disposition: "attachment",
         };
       } catch (pdfErr) {
-        console.error("⚠️ Could not generate buyer release receipt PDF:", pdfErr.message);
+        console.error("âš ï¸ Could not generate buyer release receipt PDF:", pdfErr.message);
       }
       await sgMail.send({
         to: buyer.email,
@@ -745,7 +747,7 @@ const executePayoutLink = async (invoiceId) => {
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
             [
-              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+              buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
               invoiceRow.invoicenumber,
             ],
             [
@@ -984,7 +986,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
       );
     }
 
-    // â”€â”€ Security: verify the URL :id param matches the token's invoice â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Security: verify the URL :id param matches the token's invoice Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (String(userInvoiceId) !== String(id)) {
       return res.status(400).send(
         renderPage({
@@ -1094,7 +1096,7 @@ router.get("/release-milestone/:token", async (req, res) => {
     const totalFee = Math.floor(milestoneAmount * TOTAL_FEE_RATE);
     const sellerReceives = milestoneAmount - totalFee;
 
-    // Show branded confirmation page — payout does NOT happen yet
+    // Show branded confirmation page â€” payout does NOT happen yet
     return res.send(
       renderPage({
         type: "warning",
@@ -1120,7 +1122,7 @@ router.get("/release-milestone/:token", async (req, res) => {
   }
 });
 
-// STEP 2: Buyer clicks "Yes, Release Funds" on the confirmation page — now execute the payout
+// STEP 2: Buyer clicks "Yes, Release Funds" on the confirmation page â€” now execute the payout
 router.post("/release-milestone/:token", async (req, res) => {
   const { token } = req.params;
 
@@ -1182,7 +1184,7 @@ router.post("/release-milestone/:token", async (req, res) => {
     }
     const seller = sellerResult.rows[0];
 
-    // 4. Atomic lock — prevents double-release from concurrent requests
+    // 4. Atomic lock â€” prevents double-release from concurrent requests
     const lock = await db.query(
       `UPDATE invoice_milestones
           SET status        = 'released',
@@ -1286,13 +1288,13 @@ router.post("/release-milestone/:token", async (req, res) => {
         }
       } catch (refErr) {
         console.error(
-          "⚠️ Referral credit error (milestone email payout):",
+          "âš ï¸ Referral credit error (milestone email payout):",
           refErr.message,
         );
       }
     }
 
-    // 10. Check if all milestones released → mark invoice completed
+    // 10. Check if all milestones released â†’ mark invoice completed
     const remainingResult = await db.query(
       "SELECT COUNT(*) AS remaining FROM invoice_milestones WHERE invoice_id = $1 AND status != 'released'",
       [milestone.invoice_id_fk],
@@ -1313,7 +1315,7 @@ router.post("/release-milestone/:token", async (req, res) => {
         from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: `Milestone Payment Released - ${milestone.label} | Fonlok`,
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent — ${milestone.label}</h2>
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent â€” ${milestone.label}</h2>
           <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${milestone.invoicename}</strong> and your payment has been processed.</p>
           ${emailTable([
             ["Invoice", milestone.invoicenumber],
@@ -1341,7 +1343,7 @@ router.post("/release-milestone/:token", async (req, res) => {
       });
     } catch (emailErr) {
       console.error(
-        "❌ Seller milestone receipt email error (email link):",
+        "âŒ Seller milestone receipt email error (email link):",
         emailErr.message,
       );
     }
@@ -1369,7 +1371,7 @@ router.post("/release-milestone/:token", async (req, res) => {
             <p style="color:#475569;">${releasedCopy.body(seller.name, milestone.invoicename)}</p>
             ${emailTable([
               [
-                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+                buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
                 milestone.invoicenumber,
               ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
@@ -1390,12 +1392,12 @@ router.post("/release-milestone/:token", async (req, res) => {
           ),
         });
         console.log(
-          `✅ Buyer milestone release confirmation email sent to ${buyer.email}`,
+          `âœ… Buyer milestone release confirmation email sent to ${buyer.email}`,
         );
       }
     } catch (buyerEmailErr) {
       console.error(
-        "⚠️ Buyer milestone release email error (email link):",
+        "âš ï¸ Buyer milestone release email error (email link):",
         buyerEmailErr.message,
       );
     }
@@ -1596,12 +1598,12 @@ router.post("/release-milestone/confirm", async (req, res) => {
             [msReferralEarning, referrerIdMs],
           );
           console.log(
-            `âœ… Milestone referral: ${msReferralEarning} XAF credited to user ${referrerIdMs}.`,
+            `Ã¢Å“â€¦ Milestone referral: ${msReferralEarning} XAF credited to user ${referrerIdMs}.`,
           );
         }
       } catch (referralErr) {
         console.error(
-          "âš ï¸ Referral credit error (milestone payout succeeded):",
+          "Ã¢Å¡Â Ã¯Â¸Â Referral credit error (milestone payout succeeded):",
           referralErr.message,
         );
       }
@@ -1618,7 +1620,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         milestone.invoice_id,
       ]);
       console.log(
-        `âœ… All milestones released - invoice ${invoice.invoicenumber} marked completed.`,
+        `Ã¢Å“â€¦ All milestones released - invoice ${invoice.invoicenumber} marked completed.`,
       );
     }
 
@@ -1635,7 +1637,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
         };
       } catch (pdfErr) {
         console.error(
-          "âš ï¸ Could not generate milestone receipt PDF:",
+          "Ã¢Å¡Â Ã¯Â¸Â Could not generate milestone receipt PDF:",
           pdfErr.message,
         );
       }
@@ -1678,10 +1680,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
           : {}),
       };
       await sgMail.send(sellerMsg);
-      console.log(`âœ… Milestone receipt sent to seller ${seller.email}`);
+      console.log(`Ã¢Å“â€¦ Milestone receipt sent to seller ${seller.email}`);
     } catch (emailErr) {
       console.error(
-        "âŒ Seller milestone receipt email error:",
+        "Ã¢ÂÅ’ Seller milestone receipt email error:",
         emailErr.message,
       );
     }
@@ -1725,10 +1727,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
           { footerNote: releasedCopy.footerNote },
         ),
       });
-      console.log(`✅ Buyer milestone release email sent to ${buyerRow.email}`);
+      console.log(`âœ… Buyer milestone release email sent to ${buyerRow.email}`);
     } catch (buyerEmailErr) {
       console.error(
-        "⚠️ Buyer milestone release email error (confirm):",
+        "âš ï¸ Buyer milestone release email error (confirm):",
         buyerEmailErr.message,
       );
     }
@@ -1999,7 +2001,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
           ])}
           ${
             remaining === 0
-              ? `<p style="color:#16a34a;font-weight:600;margin-top:12px;">${sellerLanguage === "fr" ? "Tous les jalons ont été libérés. Cette facture est maintenant complète." : "All milestones have been released. This invoice is now complete."}</p>`
+              ? `<p style="color:#16a34a;font-weight:600;margin-top:12px;">${sellerLanguage === "fr" ? "Tous les jalons ont Ã©tÃ© libÃ©rÃ©s. Cette facture est maintenant complÃ¨te." : "All milestones have been released. This invoice is now complete."}</p>`
               : `<p style="color:#475569;margin-top:12px;">${sellerLanguage === "fr" ? "Jalons restants" : "Remaining milestones"}: <strong>${remaining}</strong></p>`
           }
           ${emailButton(milestoneReceiptLink, payoutCopy.downloadButton)}`,
@@ -2010,10 +2012,10 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
         ...(pdfAttachment ? { attachments: [pdfAttachment] } : {}),
       };
       await sgMail.send(sellerMsg);
-      console.log(`✅ Milestone receipt sent to seller ${seller.email}`);
+      console.log(`âœ… Milestone receipt sent to seller ${seller.email}`);
     } catch (emailErr) {
       console.error(
-        "❌ Seller milestone receipt email error:",
+        "âŒ Seller milestone receipt email error:",
         emailErr.message,
       );
     }
@@ -2038,7 +2040,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
             ${emailTable([
               [
-                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
+                buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
                 invoice.invoicenumber,
               ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
@@ -2059,12 +2061,12 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
           ),
         });
         console.log(
-          `✅ Buyer milestone release email sent to ${buyerUser.email}`,
+          `âœ… Buyer milestone release email sent to ${buyerUser.email}`,
         );
       }
     } catch (buyerEmailErr) {
       console.error(
-        "⚠️ Buyer milestone release email error (by-user):",
+        "âš ï¸ Buyer milestone release email error (by-user):",
         buyerEmailErr.message,
       );
     }

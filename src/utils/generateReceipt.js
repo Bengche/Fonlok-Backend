@@ -176,11 +176,18 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
   const copy = PDF_COPY[pdfLocale];
   const dateLocale = pdfLocale === "fr" ? "fr-FR" : "en-GB";
   // ── 1. Invoice + seller ────────────────────────────────────────────────────
+  // LEFT JOIN so the query succeeds even when the platform account row is
+  // unavailable.  COALESCE prefers the invoice's own seller columns (populated
+  // by third-party API integrations like Njimbong) over the users-table values,
+  // so API-created receipts show the real seller — not the platform account.
   const invResult = await db.query(
-    `SELECT i.*, u.name AS seller_name, u.username AS seller_username,
-            u.phone AS seller_phone, u.country AS seller_country
+    `SELECT i.*,
+            COALESCE(i.seller_name,  u.name)     AS seller_name,
+            u.username                            AS seller_username,
+            COALESCE(i.seller_phone, u.phone)     AS seller_phone,
+            u.country                             AS seller_country
      FROM invoices i
-     JOIN users u ON u.id = i.userid
+     LEFT JOIN users u ON u.id = i.userid
      WHERE i.invoicenumber = $1`,
     [invoice_number],
   );

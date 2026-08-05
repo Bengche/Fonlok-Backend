@@ -627,7 +627,7 @@ router.post(
       );
 
       // Mark invoice as paid
-      await db.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [
+      await db.query("UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1", [
         inv.id,
       ]);
 
