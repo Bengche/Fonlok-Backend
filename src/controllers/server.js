@@ -714,6 +714,26 @@ app.listen(PORT, async () => {
     });
   }
 
+  // sandbox_webhooks: registered webhook endpoints per sandbox key — mirrors api_webhooks
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sandbox_webhooks (
+        id               SERIAL       PRIMARY KEY,
+        sandbox_key_id   INTEGER      NOT NULL REFERENCES sandbox_api_keys(id) ON DELETE CASCADE,
+        url              TEXT         NOT NULL,
+        label            VARCHAR(80)  NOT NULL DEFAULT '',
+        secret           TEXT         NOT NULL,
+        secret_hash      CHAR(64)     NOT NULL,
+        active           BOOLEAN      NOT NULL DEFAULT true,
+        created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS sandbox_webhooks_key_idx ON sandbox_webhooks (sandbox_key_id);
+    `);
+    logger.info("sandbox_webhooks table ready");
+  } catch (err) {
+    logger.warn("sandbox_webhooks migration failed", { error: err.message });
+  }
+
   // ── Live production API tables ───────────────────────────────────────────────
   // api_keys      : hashed sk_live_* credentials for third-party integrations
   // api_webhooks  : registered webhook endpoints per seller account

@@ -1480,4 +1480,213 @@ router.get(
   },
 );
 
+// ── POST /sandbox/payments/dispute ─────────────────────────────────────────
+// Marks a 'paid' sandbox invoice as 'disputed'.
+// Mirrors POST /v1/payments/dispute without real emails, disputes table, or chat rooms.
+router.post(
+  "/payments/dispute",
+  [
+    body("invoice_id").trim().notEmpty().withMessage("invoice_id is required."),
+    body("reason")
+      .trim()
+      .notEmpty()
+      .withMessage("reason is required.")
+      .isLength({ max: 1000 })
+      .withMessage("reason must be 1000 characters or fewer."),
+  ],
+  validate,
+  async (req, res) => {
+    const keyId = req.sandboxKey.id;
+    const { invoice_id, reason } = req.body;
+
+    try {
+      const result = await db.query(
+        `UPDATE sandbox_invoices
+         SET status = 'disputed', updated_at = NOW()
+         WHERE invoice_id = $1 AND sandbox_key_id = $2 AND status = 'paid'
+         RETURNING invoice_id, title, amount, currency, seller_email, buyer_email`,
+        [invoice_id, keyId],
+      );
+
+      if (result.rows.length === 0) {
+        const check = await db.query(
+          `SELECT status FROM sandbox_invoices WHERE invoice_id = $1 AND sandbox_key_id = $2`,
+          [invoice_id, keyId],
+        );
+        if (check.rows.length === 0) {
+          return res.status(404).json({
+            error: "invoice_not_found",
+            message: `No sandbox invoice found with id '${invoice_id}'.`,
+          });
+        }
+        return res.status(409).json({
+          error: "invalid_invoice_status",
+          message: `Cannot dispute an invoice with status '${check.rows[0].status}'. Only 'paid' invoices can be disputed.`,
+        });
+      }
+
+      const inv = result.rows[0];
+      const fakeToken = (role) =>
+        `sandbox_chat_token_${role}_${crypto.randomBytes(8).toString("hex")}`;
+      const buyerLink = `https://fonlok.com/chat/${invoice_id}?token=${fakeToken("buyer")}&role=buyer`;
+      const sellerLink = `https://fonlok.com/chat/${invoice_id}?token=${fakeToken("seller")}&role=seller`;
+
+      logger.info("Sandbox invoice disputed", { keyId, invoiceId: invoice_id });
+
+      return res.json({
+        object: "sandbox_dispute",
+        invoice_id: inv.invoice_id,
+        status: "disputed",
+        reason,
+        disputed_at: new Date().toISOString(),
+        chat_links: { buyer: buyerLink, seller: sellerLink },
+        _sandbox: true,
+        message:
+          "Sandbox: Invoice flagged as disputed. No real funds are held and no emails were sent.",
+      });
+    } catch (err) {
+      logger.error("Failed to dispute sandbox invoice", { error: err.message });
+      return res
+        .status(500)
+        .json({ error: "server_error", message: "Failed to dispute invoice." });
+    }
+  },
+);
+
+// ── POST /sandbox/webhooks/register ──────────────────────────────────────────
+// Register a URL to receive sandbox webhook events.
+// Mirrors POST /v1/webhooks/register — same SSRF guard, same 5-endpoint cap.
+router.post(
+  "/webhooks/register",
+  [
+    body("url")
+      .trim()
+      .notEmpty()
+      .withMessage("url is required.")
+      .isURL({ require_tld: true, require_protocol: true })
+      .withMessage("url must be a valid URL including the protocol."),
+    body("label")
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ max: 80 })
+      .withMessage("label must be 80 characters or fewer."),
+  ],
+  validate,
+  async (req, res) => {
+    const keyId = req.sandboxKey.id;
+    const { url, label = "" } = req.body;
+
+    const { safe, reason } = await isSafeCallbackUrl(url);
+    if (!safe) {
+      return res.status(400).json({ error: "unsafe_url", message: reason });
+    }
+
+    const countResult = await db.query(
+      `SELECT COUNT(*) AS cnt FROM sandbox_webhooks WHERE sandbox_key_id = $1 AND active = true`,
+      [keyId],
+    );
+    if (parseInt(countResult.rows[0].cnt, 10) >= 5) {
+      return res.status(429).json({
+        error: "webhook_limit_reached",
+        message:
+          "You already have 5 active sandbox webhook endpoints. Remove one before adding another.",
+      });
+    }
+
+    const secret = "whsec_test_" + crypto.randomBytes(32).toString("hex");
+    const secretHash = crypto.createHash("sha256").update(secret).digest("hex");
+
+    try {
+      const result = await db.query(
+        `INSERT INTO sandbox_webhooks (sandbox_key_id, url, label, secret, secret_hash, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, true, NOW())
+         RETURNING id, url, label, created_at`,
+        [keyId, url, label, secret, secretHash],
+      );
+
+      const hook = result.rows[0];
+      return res.status(201).json({
+        object: "sandbox_webhook",
+        id: hook.id,
+        url: hook.url,
+        label: hook.label,
+        secret,
+        created_at: hook.created_at,
+        _sandbox: true,
+        _note: "Store the secret securely. It will not be shown again.",
+      });
+    } catch (err) {
+      logger.error("Failed to register sandbox webhook", {
+        error: err.message,
+        keyId,
+      });
+      return res
+        .status(500)
+        .json({
+          error: "server_error",
+          message: "Failed to register webhook.",
+        });
+    }
+  },
+);
+
+// ── GET /sandbox/webhooks ─────────────────────────────────────────────────────
+router.get("/webhooks", async (req, res) => {
+  const keyId = req.sandboxKey.id;
+  try {
+    const result = await db.query(
+      `SELECT id, url, label, active, created_at
+       FROM sandbox_webhooks
+       WHERE sandbox_key_id = $1
+       ORDER BY created_at DESC`,
+      [keyId],
+    );
+    return res.json({ object: "list", data: result.rows, _sandbox: true });
+  } catch (err) {
+    logger.error("Failed to list sandbox webhooks", { error: err.message });
+    return res
+      .status(500)
+      .json({ error: "server_error", message: "Failed to retrieve webhooks." });
+  }
+});
+
+// ── DELETE /sandbox/webhooks/:id ──────────────────────────────────────────────
+router.delete(
+  "/webhooks/:id",
+  [param("id").isInt({ min: 1 }).withMessage("id must be a positive integer.")],
+  validate,
+  async (req, res) => {
+    const keyId = req.sandboxKey.id;
+    const hookId = parseInt(req.params.id, 10);
+
+    try {
+      const result = await db.query(
+        `UPDATE sandbox_webhooks
+         SET active = false
+         WHERE id = $1 AND sandbox_key_id = $2
+         RETURNING id`,
+        [hookId, keyId],
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "not_found",
+          message: `No sandbox webhook found with id ${hookId}.`,
+        });
+      }
+      return res.json({
+        object: "sandbox_webhook",
+        id: hookId,
+        active: false,
+        deleted: true,
+        _sandbox: true,
+      });
+    } catch (err) {
+      logger.error("Failed to delete sandbox webhook", { error: err.message });
+      return res
+        .status(500)
+        .json({ error: "server_error", message: "Failed to delete webhook." });
+    }
+  },
+);
+
 export default router;
