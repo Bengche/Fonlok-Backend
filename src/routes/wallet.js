@@ -27,7 +27,12 @@ import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import logger from "../utils/logger.js";
-import { emailWrap, emailTable, emailButton, emailButtonDanger } from "../utils/emailTemplate.js";
+import {
+  emailWrap,
+  emailTable,
+  emailButton,
+  emailButtonDanger,
+} from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 
@@ -627,9 +632,10 @@ router.post(
       );
 
       // Mark invoice as paid
-      await db.query("UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1", [
-        inv.id,
-      ]);
+      await db.query(
+        "UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1",
+        [inv.id],
+      );
 
       // Create buyer release confirmation code (same schema as paymentWebhook.js)
       const releaseCode = generate8CharCode();
@@ -656,10 +662,10 @@ router.post(
       // Generate chat token, store it on the guest row, and create the chat room
       const chatToken = crypto.randomBytes(32).toString("hex");
       await db
-        .query(
-          "UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2",
-          [chatToken, inv.invoicenumber],
-        )
+        .query("UPDATE guests SET chat_token = $1 WHERE invoicenumber = $2", [
+          chatToken,
+          inv.invoicenumber,
+        ])
         .catch(() => {});
       await db
         .query(
@@ -730,7 +736,7 @@ router.post(
       // Send chat invite email with chat + dispute links (non-fatal)
       if (inv.clientemail) {
         try {
-          const buyerChatLink    = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${chatToken}`;
+          const buyerChatLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${chatToken}`;
           const buyerDisputeLink = `${process.env.FRONTEND_URL}/chat/${inv.invoicenumber}?token=${chatToken}&dispute=true`;
           const chatCopy = buildEmailCopy("en", "chatInvite");
           await sgMail.send({

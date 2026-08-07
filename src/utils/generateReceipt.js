@@ -333,7 +333,10 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
 
   // Step 1: scale font size down from 17 until it fits on one line (min 10)
   let titleSize = 17;
-  while (titleSize > 10 && bold.widthOfTextAtSize(titleText, titleSize) > maxTitleW) {
+  while (
+    titleSize > 10 &&
+    bold.widthOfTextAtSize(titleText, titleSize) > maxTitleW
+  ) {
     titleSize -= 0.5;
   }
 
@@ -351,9 +354,15 @@ export async function generateReceiptPdf(invoice_number, locale = "en") {
       } else {
         if (currentLine) titleLines.push(currentLine);
         // Single word wider than maxTitleW — truncate with ellipsis
-        if (!currentLine && bold.widthOfTextAtSize(word, titleSize) > maxTitleW) {
+        if (
+          !currentLine &&
+          bold.widthOfTextAtSize(word, titleSize) > maxTitleW
+        ) {
           let truncated = word;
-          while (truncated.length > 1 && bold.widthOfTextAtSize(truncated + "…", titleSize) > maxTitleW)
+          while (
+            truncated.length > 1 &&
+            bold.widthOfTextAtSize(truncated + "…", titleSize) > maxTitleW
+          )
             truncated = truncated.slice(0, -1);
           titleLines.push(truncated + "…");
           currentLine = "";

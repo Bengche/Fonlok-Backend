@@ -92,9 +92,10 @@ export async function processSuccessfulPayment(paymentUUID) {
     "UPDATE payments SET status = 'paid' WHERE providerpaymentid = $1",
     [paymentUUID],
   );
-  await db.query("UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1", [
-    invoiceId,
-  ]);
+  await db.query(
+    "UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1",
+    [invoiceId],
+  );
 
   // 4. Get invoice details
   const invoiceResult = await db.query("SELECT * FROM invoices WHERE id = $1", [
@@ -165,7 +166,11 @@ export async function processSuccessfulPayment(paymentUUID) {
         disposition: "attachment",
       };
     } catch (pdfErr) {
-      console.error("⚠️  Could not generate receipt PDF:", pdfErr.message, pdfErr.stack);
+      console.error(
+        "⚠️  Could not generate receipt PDF:",
+        pdfErr.message,
+        pdfErr.stack,
+      );
     }
 
     const receiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice_number}`;
