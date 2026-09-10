@@ -17,17 +17,19 @@ const aiChatLimiter = rateLimit({
 });
 
 // ── Gemini 2.0 Flash — key rotation across multiple free-tier projects ────────
-// Add up to 5 keys from different Google projects (each gives 1,500 req/day).
-// The router tries each key in order and skips to the next on a 429 response.
-// With 5 keys that's 7,500 req/day free. Falls back to Groq if all exhausted.
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-// ── Groq fallback — llama-3.3-70b-versatile ───────────────────────────────────
-// Groq free tier: 14,400 req/day per key. Supports multiple keys via
-// GROQ_API_KEY, GROQ_API_KEY_2 … GROQ_API_KEY_5
+// ── Groq fallback models (active production endpoints) ────────────────────────
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODELS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "qwen/qwen3.6-27b",
+  "qwen/qwen3.8-27b",
+  "groq/compound",
+  "groq/compound-mini",
+];
 
 function getGeminiKeys() {
   return [
@@ -49,7 +51,7 @@ function getGroqKeys() {
   ].filter(Boolean);
 }
 
-// Call Gemini, rotating through keys on 429. Returns { ok, status, data, body }
+// Call Gemini, rotating through keys on 429 or server errors.
 async function callGemini(payload) {
   const keys = getGeminiKeys();
   if (keys.length === 0)
@@ -57,39 +59,51 @@ async function callGemini(payload) {
       ok: false,
       status: 503,
       body: "No Gemini keys configured",
-      exhausted: false,
+      exhausted: true,
     };
+
   for (const key of keys) {
-    const res = await fetch(`${GEMINI_URL}?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (res.status === 429) {
-      logger.warn("Gemini key quota hit, trying next key", {
-        keyPrefix: key.slice(0, 8),
+    try {
+      const res = await fetch(`${GEMINI_URL}?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 429 || res.status >= 500) {
+        logger.warn(`Gemini error (${res.status}), trying next key`, {
+          keyPrefix: key.slice(0, 8),
+        });
+        continue;
+      }
+
+      const data = await res.json();
+      if (res.ok) {
+        return { ok: true, status: res.status, data };
+      }
+    } catch (err) {
+      logger.warn("Gemini network error, trying next key", {
+        error: err.message,
       });
       continue;
     }
-    const data = await res.json();
-    return { ok: res.ok, status: res.status, data };
   }
+
   logger.warn("All Gemini keys exhausted — falling back to Groq");
   return {
     ok: false,
-    status: 429,
+    status: 503,
     body: "All Gemini keys exhausted",
     exhausted: true,
   };
 }
 
-// Call Groq (OpenAI-compatible), rotating through keys on 429.
+// Call Groq with key rotation and multi-model fallback.
 async function callGroq(systemPrompt, messages) {
   const keys = getGroqKeys();
   if (keys.length === 0)
     return { ok: false, status: 503, body: "No Groq keys configured" };
 
-  // Convert Gemini-format contents → OpenAI messages
   const openaiMessages = [
     { role: "system", content: systemPrompt },
     ...messages.map((m) => ({
@@ -98,37 +112,54 @@ async function callGroq(systemPrompt, messages) {
     })),
   ];
 
-  for (const key of keys) {
-    const res = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: openaiMessages,
-        max_tokens: 600,
-        temperature: 0.65,
-        top_p: 0.92,
-      }),
-    });
-    if (res.status === 429) {
-      logger.warn("Groq key quota hit, trying next key", {
-        keyPrefix: key.slice(0, 8),
-      });
-      continue;
+  for (const model of GROQ_MODELS) {
+    for (const key of keys) {
+      try {
+        const res = await fetch(GROQ_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: openaiMessages,
+            max_tokens: 600,
+            temperature: 0.65,
+            top_p: 0.92,
+          }),
+        });
+
+        if (res.status === 429) {
+          logger.warn("Groq key quota hit, trying next key", {
+            keyPrefix: key.slice(0, 8),
+            model,
+          });
+          continue;
+        }
+
+        const data = await res.json();
+
+        if (res.ok && data.choices?.[0]?.message) {
+          return { ok: true, status: res.status, data, provider: "groq" };
+        }
+
+        logger.warn(
+          `Groq model ${model} issue:`,
+          data.error?.message || res.statusText,
+        );
+      } catch (networkErr) {
+        logger.warn(`Groq network error on ${model}:`, networkErr.message);
+      }
     }
-    const data = await res.json();
-    return { ok: res.ok, status: res.status, data, provider: "groq" };
   }
-  return { ok: false, status: 429, body: "All Groq keys exhausted" };
+
+  return { ok: false, status: 503, body: "All Groq models and keys exhausted" };
 }
 
 // ── System prompt — Kila's identity and mission ───────────────────────────────
-// Built as a function so full site URLs are always computed from BRAND.siteUrl.
 function buildSystemPrompt() {
-  const base = BRAND.siteUrl; // e.g. https://fonlok.com
+  const base = BRAND.siteUrl;
   return `You are Kila, the intelligent AI assistant for Fonlok — Cameroon's most trusted escrow payment platform.
 
 ════════════════════════════════════════
@@ -262,16 +293,13 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
       return res.status(400).json({ error: "messages array is required" });
     }
 
-    // Ensure at least one provider is configured
     if (getGeminiKeys().length === 0 && getGroqKeys().length === 0) {
       logger.error("No AI API keys configured (Gemini or Groq)");
       return res.status(503).json({ error: "AI service is not configured" });
     }
 
-    // Hard cap: only send the last 10 messages to keep token usage in check
     const recent = messages.slice(-10);
 
-    // Build context note injected at the end of the system prompt
     let contextNote = "";
     if (context?.page) {
       contextNote += `\n[User is currently on page: ${context.page}]`;
@@ -284,7 +312,6 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
         "\n[User is NOT logged in — gently encourage them to register when relevant]";
     }
 
-    // Convert to Gemini role format (user / model), strict alternation required.
     const rawContents = recent.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: String(m.content || "").trim() || "…" }],
@@ -325,8 +352,8 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
 
     let aiResult = await callGemini(geminiPayload);
 
-    // If all Gemini keys are exhausted, fall back to Groq automatically
-    if (!aiResult.ok && aiResult.exhausted) {
+    // Fall back to Groq if Gemini fails for any reason
+    if (!aiResult.ok) {
       aiResult = await callGroq(SYSTEM_PROMPT + contextNote, contents);
     }
 
@@ -339,7 +366,6 @@ router.post("/ai-chat", aiChatLimiter, async (req, res) => {
       });
     }
 
-    // Extract reply — different schema for Gemini vs Groq (OpenAI format)
     let reply;
     if (aiResult.provider === "groq") {
       reply = aiResult.data?.choices?.[0]?.message?.content;
