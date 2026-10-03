@@ -2718,9 +2718,11 @@ router.get("/live-keys", adminMiddleware, async (req, res) => {
   if (status === "pending") {
     whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NULL";
   } else if (status === "approved") {
-    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NULL";
+    whereClause =
+      "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NULL";
   } else if (status === "suspended") {
-    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NOT NULL";
+    whereClause =
+      "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NOT NULL";
   } else if (status === "revoked") {
     whereClause = "WHERE k.revoked_at IS NOT NULL";
   } else {
@@ -2808,11 +2810,17 @@ router.patch("/live-keys/:id/suspend", adminMiddleware, async (req, res) => {
       [keyId],
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Approved active key not found." });
+      return res
+        .status(404)
+        .json({ message: "Approved active key not found." });
     }
     const key = result.rows[0];
     await notifyLiveKeyStatusChange(key, "suspended");
-    await auditLog("live_key_suspended", key.user_id, `key_id=${key.id} prefix=${key.key_prefix}`);
+    await auditLog(
+      "live_key_suspended",
+      key.user_id,
+      `key_id=${key.id} prefix=${key.key_prefix}`,
+    );
     return res.json({ message: "Key suspended.", key });
   } catch (err) {
     console.error("Admin suspend live key error:", err.message);
@@ -2835,11 +2843,17 @@ router.patch("/live-keys/:id/activate", adminMiddleware, async (req, res) => {
       [keyId],
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Suspended approved key not found." });
+      return res
+        .status(404)
+        .json({ message: "Suspended approved key not found." });
     }
     const key = result.rows[0];
     await notifyLiveKeyStatusChange(key, "reactivated");
-    await auditLog("live_key_reactivated", key.user_id, `key_id=${key.id} prefix=${key.key_prefix}`);
+    await auditLog(
+      "live_key_reactivated",
+      key.user_id,
+      `key_id=${key.id} prefix=${key.key_prefix}`,
+    );
     return res.json({ message: "Key reactivated.", key });
   } catch (err) {
     console.error("Admin activate live key error:", err.message);
