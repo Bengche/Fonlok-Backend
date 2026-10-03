@@ -42,8 +42,8 @@ db.query(
   logger.error("user_sessions index migration error", { error: err.message });
 });
 
-function isHttpsRequest() {
-  return process.env.BACKEND_URL?.startsWith("https");
+function isHttpsRequest(req) {
+  return Boolean(req?.secure || process.env.BACKEND_URL?.startsWith("https"));
 }
 
 function firstHeaderValue(value) {
@@ -136,7 +136,7 @@ export function setAuthCookie(res, token) {
 }
 
 export function setPendingLoginCookie(res, token) {
-  const isHttps = isHttpsRequest();
+  const isHttps = isHttpsRequest(res.req);
   res.cookie("loginOtp", token, {
     httpOnly: true,
     secure: isHttps,
@@ -146,7 +146,7 @@ export function setPendingLoginCookie(res, token) {
 }
 
 export function clearPendingLoginCookie(res) {
-  const isHttps = isHttpsRequest();
+  const isHttps = isHttpsRequest(res.req);
   res.clearCookie("loginOtp", {
     httpOnly: true,
     secure: isHttps,

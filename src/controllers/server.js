@@ -792,7 +792,8 @@ app.listen(PORT, async () => {
     await db.query(`
       ALTER TABLE invoices
         ADD COLUMN IF NOT EXISTS external_reference VARCHAR(200),
-        ADD COLUMN IF NOT EXISTS created_via_api    BOOLEAN NOT NULL DEFAULT false
+        ADD COLUMN IF NOT EXISTS created_via_api    BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS api_key_id         INTEGER REFERENCES api_keys(id) ON DELETE SET NULL
     `);
     await db.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS invoices_external_reference_user_idx
@@ -832,6 +833,7 @@ app.listen(PORT, async () => {
     await db.query(`
       ALTER TABLE api_keys
         ADD COLUMN IF NOT EXISTS approved_at      TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS suspended_at     TIMESTAMPTZ DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS company_name     VARCHAR(200) DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS website_url      VARCHAR(500) DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS use_case         TEXT         DEFAULT NULL,

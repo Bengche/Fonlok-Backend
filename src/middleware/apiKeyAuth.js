@@ -46,7 +46,7 @@ export async function apiKeyAuth(req, res, next) {
 
   try {
     const result = await db.query(
-      `SELECT id, user_id, label, revoked_at, approved_at
+      `SELECT id, user_id, label, revoked_at, approved_at, suspended_at
        FROM api_keys
        WHERE key_hash = $1`,
       [keyHash],
@@ -66,6 +66,14 @@ export async function apiKeyAuth(req, res, next) {
         error: "revoked_api_key",
         message:
           "This API key has been revoked. Create a new one in the Fonlok Developer dashboard.",
+      });
+    }
+
+    if (row.suspended_at) {
+      return res.status(403).json({
+        error: "suspended_api_key",
+        message:
+          "This API key has been suspended by Fonlok. Contact support or check your account email for more information.",
       });
     }
 

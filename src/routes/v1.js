@@ -322,8 +322,8 @@ router.post(
         `INSERT INTO invoices
            (invoicename, clientemail, currency, amount, invoicenumber, userid,
             invoicelink, description, expires_at, payment_type, external_reference,
-            created_via_api, seller_name, seller_email, seller_phone, buyer_phone)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'full', $10, true, $11, $12, $13, $14)
+              created_via_api, api_key_id, seller_name, seller_email, seller_phone, buyer_phone)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'full', $10, true, $11, $12, $13, $14, $15)
          RETURNING id, invoicenumber, invoicename, clientemail, currency, amount,
                    invoicelink, description, expires_at, external_reference,
                    status, seller_name, seller_email, seller_phone, buyer_phone,
@@ -339,6 +339,7 @@ router.post(
           description,
           expires_at || null,
           reference || null,
+          req.apiKey.id,
           seller_name,
           seller_email,
           seller_phone,

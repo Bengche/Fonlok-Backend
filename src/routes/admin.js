@@ -2709,7 +2709,7 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /admin/live-keys?status=pending|approved|revoked|all
+// GET /admin/live-keys?status=pending|approved|suspended|revoked|all
 // Lists live API keys so the admin can see what is pending approval.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/live-keys", adminMiddleware, async (req, res) => {
@@ -2718,7 +2718,9 @@ router.get("/live-keys", adminMiddleware, async (req, res) => {
   if (status === "pending") {
     whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NULL";
   } else if (status === "approved") {
-    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL";
+    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NULL";
+  } else if (status === "suspended") {
+    whereClause = "WHERE k.revoked_at IS NULL AND k.approved_at IS NOT NULL AND k.suspended_at IS NOT NULL";
   } else if (status === "revoked") {
     whereClause = "WHERE k.revoked_at IS NOT NULL";
   } else {
@@ -2729,12 +2731,20 @@ router.get("/live-keys", adminMiddleware, async (req, res) => {
       SELECT k.id, k.user_id, k.key_prefix, k.label,
              k.company_name, k.website_url, k.use_case,
              k.request_count, k.last_used_at,
-             k.revoked_at, k.approved_at,
+                  k.revoked_at, k.approved_at, k.suspended_at,
              k.rejected_at, k.rejection_reason,
              k.created_at,
-             u.email AS user_email, u.name AS user_name
+                  u.email AS user_email, u.name AS user_name,
+                  COALESCE(usage.successful_amount, 0) AS successful_amount,
+                  COALESCE(usage.successful_payment_count, 0) AS successful_payment_count
       FROM api_keys k
       JOIN users u ON u.id = k.user_id
+                LEFT JOIN LATERAL (
+             SELECT SUM(p.amount) AS successful_amount, COUNT(*) AS successful_payment_count
+             FROM invoices i
+             JOIN payments p ON p.invoiceid = i.id AND p.status = 'paid'
+             WHERE i.api_key_id = k.id
+                ) usage ON true
       ${whereClause}
       ORDER BY k.created_at DESC
       LIMIT 200
@@ -2743,6 +2753,97 @@ router.get("/live-keys", adminMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Admin list live keys error:", err.message);
     return res.status(500).json({ message: "Failed to fetch live keys." });
+  }
+});
+
+async function notifyLiveKeyStatusChange(key, action) {
+  try {
+    const userResult = await db.query(
+      "SELECT email, name FROM users WHERE id = $1",
+      [key.user_id],
+    );
+    if (userResult.rows.length === 0) return;
+    const user = userResult.rows[0];
+    const suspended = action === "suspended";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://fonlok.com";
+    await sgMail.send({
+      to: user.email,
+      from: { name: BRAND.name, email: BRAND.supportEmail },
+      replyTo: BRAND.supportEmail,
+      subject: suspended
+        ? "Important update about your Fonlok API key"
+        : "Your Fonlok API key is active again",
+      html: emailWrap(`
+        <h2 style="margin:0 0 8px;color:#0f172a;font-size:22px;font-weight:800;">API key ${suspended ? "suspended" : "reactivated"}</h2>
+        <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+          Hi ${escapeHtml(user.name || "there")},<br/><br/>
+          Your Fonlok live API key <strong>${escapeHtml(key.key_prefix)}&hellip;</strong>
+          (${escapeHtml(key.label)}) was ${suspended ? "suspended" : "reactivated"} by our team.
+          ${suspended ? "Requests made with this key are blocked until it is reactivated." : "You can now use this key to make live API requests again."}
+        </p>
+        <p style="margin:0 0 18px;color:#475569;line-height:1.7;">
+          If you have questions about this change, contact us at
+          <a href="mailto:${BRAND.supportEmail}" style="color:#2563eb;">${BRAND.supportEmail}</a>.
+        </p>
+        ${emailButton("View Developer Dashboard", appUrl + "/developers")}
+      `),
+    });
+  } catch (emailErr) {
+    console.error(`Failed to send API key ${action} email:`, emailErr.message);
+  }
+}
+
+// PATCH /admin/live-keys/:id/suspend — block an approved key without revoking it.
+router.patch("/live-keys/:id/suspend", adminMiddleware, async (req, res) => {
+  const keyId = parseInt(req.params.id, 10);
+  if (!keyId || isNaN(keyId)) {
+    return res.status(400).json({ message: "Invalid key ID." });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE api_keys
+       SET suspended_at = NOW()
+       WHERE id = $1 AND revoked_at IS NULL AND approved_at IS NOT NULL AND suspended_at IS NULL
+       RETURNING id, key_prefix, label, user_id, suspended_at`,
+      [keyId],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Approved active key not found." });
+    }
+    const key = result.rows[0];
+    await notifyLiveKeyStatusChange(key, "suspended");
+    await auditLog("live_key_suspended", key.user_id, `key_id=${key.id} prefix=${key.key_prefix}`);
+    return res.json({ message: "Key suspended.", key });
+  } catch (err) {
+    console.error("Admin suspend live key error:", err.message);
+    return res.status(500).json({ message: "Failed to suspend key." });
+  }
+});
+
+// PATCH /admin/live-keys/:id/activate — restore a suspended approved key.
+router.patch("/live-keys/:id/activate", adminMiddleware, async (req, res) => {
+  const keyId = parseInt(req.params.id, 10);
+  if (!keyId || isNaN(keyId)) {
+    return res.status(400).json({ message: "Invalid key ID." });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE api_keys
+       SET suspended_at = NULL
+       WHERE id = $1 AND revoked_at IS NULL AND approved_at IS NOT NULL AND suspended_at IS NOT NULL
+       RETURNING id, key_prefix, label, user_id`,
+      [keyId],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Suspended approved key not found." });
+    }
+    const key = result.rows[0];
+    await notifyLiveKeyStatusChange(key, "reactivated");
+    await auditLog("live_key_reactivated", key.user_id, `key_id=${key.id} prefix=${key.key_prefix}`);
+    return res.json({ message: "Key reactivated.", key });
+  } catch (err) {
+    console.error("Admin activate live key error:", err.message);
+    return res.status(500).json({ message: "Failed to reactivate key." });
   }
 });
 
