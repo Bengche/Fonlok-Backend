@@ -858,6 +858,39 @@ app.listen(PORT, async () => {
     });
   }
 
+  // Split payouts: one developer commission per API invoice, paid after the seller.
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS invoice_payout_splits (
+        id               SERIAL        PRIMARY KEY,
+        invoice_id       INTEGER       NOT NULL UNIQUE REFERENCES invoices(id) ON DELETE CASCADE,
+        api_key_id       INTEGER       REFERENCES api_keys(id) ON DELETE SET NULL,
+        recipient_phone  VARCHAR(20)   NOT NULL,
+        recipient_name   VARCHAR(100),
+        split_type       VARCHAR(12)   NOT NULL CHECK (split_type IN ('percentage', 'fixed')),
+        split_value      NUMERIC(12,2) NOT NULL CHECK (split_value > 0),
+        amount           INTEGER       NOT NULL CHECK (amount > 0),
+        status           VARCHAR(12)   NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending', 'processing', 'paid', 'failed')),
+        attempts         INTEGER       NOT NULL DEFAULT 0,
+        failure_reason   TEXT,
+        campay_reference TEXT,
+        paid_at          TIMESTAMPTZ,
+        created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      ALTER TABLE invoice_payout_splits
+        ADD COLUMN IF NOT EXISTS recipient_email VARCHAR(255)
+    `);
+    logger.info("invoice_payout_splits table ready");
+  } catch (err) {
+    logger.warn("invoice_payout_splits migration failed", {
+      error: err.message,
+    });
+  }
+
   // ── Wallet tables ──────────────────────────────────────────────────────
   try {
     await db.query(`

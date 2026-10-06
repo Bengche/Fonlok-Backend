@@ -17,6 +17,10 @@ import {
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
 import { deliverWebhookEvent } from "./v1.js";
+import {
+  getInvoiceSplit,
+  settleInvoiceSplit,
+} from "../utils/invoicePayoutSplit.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -843,7 +847,7 @@ router.post(
 
       // Display-only fee: show the combined 3% (Fonlok 2% + Campay ~1%) in
       // emails, chat messages, and webhooks. Payout variables are unchanged.
-      const displayFee    = Math.round(effectiveAmount * 0.03);
+      const displayFee = Math.round(effectiveAmount * 0.03);
       const displayAmount = effectiveAmount - displayFee;
 
       // Helper: compute final dispute status after this resolution
@@ -862,7 +866,14 @@ router.post(
 
       if (decision === "seller") {
         // ── DECISION: Release funds to the seller ──────────────────────────
-        const sellerShare = effectiveAmount - totalFeeD;
+        // API invoices may carry a developer split, paid out of the seller's share.
+        const splitRowD = invoice.created_via_api
+          ? await getInvoiceSplit(invoice.id)
+          : null;
+        const sellerShare =
+          effectiveAmount -
+          totalFeeD -
+          (splitRowD ? Number(splitRowD.amount) : 0);
         // For API invoices use the seller credentials sent by the platform —
         // never the Fonlok users table (which holds the platform account, not the seller).
         let seller;
@@ -870,7 +881,7 @@ router.post(
           seller = {
             phone: invoice.seller_phone,
             email: invoice.seller_email,
-            name:  invoice.seller_name,
+            name: invoice.seller_name,
           };
         } else {
           const sellerResult = await db.query(
@@ -903,6 +914,9 @@ router.post(
           },
           { headers: { Authorization: `Token ${campayAuthS.data.token}` } },
         );
+
+        // Split leg runs only after the seller was paid and never undoes the payout.
+        if (splitRowD) await settleInvoiceSplit(invoice, deliverWebhookEvent);
 
         if (isMilestoneInvoiceR && eligibleMilestones.length > 0) {
           await db.query(
@@ -1027,8 +1041,13 @@ router.post(
         try {
           // For API invoices use the buyer email from the invoice; for regular invoices use guests table.
           const buyerNotifEmail = invoice.created_via_api
-            ? (invoice.clientemail || null)
-            : (await db.query("SELECT email FROM guests WHERE invoicenumber = $1", [invoice.invoicenumber])).rows[0]?.email;
+            ? invoice.clientemail || null
+            : (
+                await db.query(
+                  "SELECT email FROM guests WHERE invoicenumber = $1",
+                  [invoice.invoicenumber],
+                )
+              ).rows[0]?.email;
           if (buyerNotifEmail) {
             await sgMail.send({
               to: buyerNotifEmail,
@@ -1075,7 +1094,7 @@ router.post(
         // never the Fonlok guests table (which holds the platform account, not the buyer).
         let buyerMoMo, buyerEmail;
         if (invoice.created_via_api) {
-          buyerMoMo  = invoice.buyer_phone || null;
+          buyerMoMo = invoice.buyer_phone || null;
           buyerEmail = invoice.clientemail || null;
         } else {
           const guestResult = await db.query(
@@ -1083,8 +1102,8 @@ router.post(
             [invoice.invoicenumber],
           );
           const guest = guestResult.rows[0] ?? null;
-          buyerMoMo  = guest?.momo_number || null;
-          buyerEmail = guest?.email       || null;
+          buyerMoMo = guest?.momo_number || null;
+          buyerEmail = guest?.email || null;
         }
 
         if (!buyerMoMo) {
@@ -1217,11 +1236,14 @@ router.post(
           let sellerNotifEmail, sellerNotifName;
           if (invoice.created_via_api) {
             sellerNotifEmail = invoice.seller_email || null;
-            sellerNotifName  = invoice.seller_name  || "Seller";
+            sellerNotifName = invoice.seller_name || "Seller";
           } else {
-            const sR = await db.query("SELECT email, name FROM users WHERE id = $1", [invoice.userid]);
+            const sR = await db.query(
+              "SELECT email, name FROM users WHERE id = $1",
+              [invoice.userid],
+            );
             sellerNotifEmail = sR.rows[0]?.email || null;
-            sellerNotifName  = sR.rows[0]?.name  || "Seller";
+            sellerNotifName = sR.rows[0]?.name || "Seller";
           }
           if (sellerNotifEmail) {
             await sgMail.send({

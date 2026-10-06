@@ -15,6 +15,11 @@ import {
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
+import {
+  requiresPartPayments,
+  recordConfirmedPart,
+  getPaymentProgress,
+} from "../utils/paymentParts.js";
 dotenv.config();
 const router = express.Router();
 import sgMail from "@sendgrid/mail";
@@ -85,6 +90,22 @@ export async function processSuccessfulPayment(paymentUUID) {
       `Invoice ${invoiceId} already has a confirmation code - skipping.`,
     );
     return "already_done";
+  }
+
+  // Part-payment invoices (above the mobile money limit): record this part and
+  // stop here unless it was the last one. Other invoices skip this block entirely.
+  const partInvoice = await db.query("SELECT * FROM invoices WHERE id = $1", [
+    invoiceId,
+  ]);
+  if (
+    partInvoice.rows.length > 0 &&
+    requiresPartPayments(partInvoice.rows[0].amount)
+  ) {
+    const progress = await recordConfirmedPart(invoiceId, paymentUUID);
+    await notifyPartConfirmed(partInvoice.rows[0], payment, progress);
+    if (!progress.complete) return "partial";
+    // Last part: the confirmation emails and webhooks below report the full amount.
+    payment.amount = progress.total_amount;
   }
 
   // 3. Mark payment + invoice as paid
@@ -482,6 +503,79 @@ export async function processSuccessfulPayment(paymentUUID) {
 }
 
 // ─── Route 1: Campay webhook ──────────────────────────────────────────────────
+// Called after each confirmed part of a part-payment invoice. Never throws.
+async function notifyPartConfirmed(invoice, payment, progress) {
+  try {
+    const partNumber = progress.paid_parts;
+    deliverWebhookEvent(invoice.userid, "payment.part_confirmed", {
+      object: "event",
+      type: "payment.part_confirmed",
+      invoice_id: invoice.invoicenumber,
+      reference: payment.providerpaymentid,
+      part_number: partNumber,
+      part_count: progress.part_count,
+      amount: Number(payment.amount),
+      paid_amount: progress.paid_amount,
+      remaining_amount: progress.remaining_amount,
+      total_amount: progress.total_amount,
+      currency: payment.currency ?? "XAF",
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+
+    // The last part triggers the normal confirmation emails instead.
+    if (progress.complete) return;
+
+    const guest = await db.query(
+      "SELECT email FROM guests WHERE invoicenumber = $1 ORDER BY created_at DESC LIMIT 1",
+      [invoice.invoicenumber],
+    );
+    const buyerEmail = guest.rows[0]?.email;
+    if (!buyerEmail) return;
+
+    const language = await getUserEmailLanguageByEmail(buyerEmail);
+    const copy = buildEmailCopy(language, "partPaymentReceived");
+    const fmt = (n) => `${Number(n).toLocaleString("en-US")} XAF`;
+    const payLink = `${process.env.FRONTEND_URL}/pay/${invoice.invoicenumber}`;
+    await sgMail.send({
+      to: buyerEmail,
+      from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
+      subject: copy.subject(
+        invoice.invoicenumber,
+        partNumber,
+        progress.part_count,
+      ),
+      html: emailWrap(
+        `<h2 style="color:#0F1F3D;margin:0 0 12px;">${copy.title(partNumber, progress.part_count)}</h2>
+        <p style="color:#475569;">${copy.body(invoice.invoicenumber)}</p>
+        ${emailTable([
+          ["Invoice Number", invoice.invoicenumber],
+          [
+            copy.partLabel,
+            fmt(payment.amount),
+            "font-weight:700;color:#16a34a;font-size:15px;",
+          ],
+          [copy.paidLabel, fmt(progress.paid_amount)],
+          [
+            copy.remainingLabel,
+            fmt(progress.remaining_amount),
+            "color:#dc2626;",
+          ],
+          [
+            copy.nextLabel,
+            `${progress.next_part_number}/${progress.part_count} - ${fmt(progress.next_part_amount)}`,
+          ],
+          [copy.statusLabel, copy.status, "color:#16a34a;font-weight:600;"],
+        ])}
+        <p style="color:#475569;">${copy.nextStep}</p>
+        ${emailButton(payLink, copy.button)}`,
+        { footerNote: copy.footerNote },
+      ),
+    });
+  } catch (err) {
+    console.error("Part payment notification error (non-fatal):", err.message);
+  }
+}
+
 router.post("/confirmation", async (req, res) => {
   const signature = req.body.signature;
   const paymentUUID = req.body.external_reference;
@@ -516,13 +610,14 @@ router.get("/poll/:invoice_number", async (req, res) => {
   try {
     // Fast path - check DB first
     const invoiceResult = await db.query(
-      "SELECT status FROM invoices WHERE invoicenumber = $1",
+      "SELECT id, amount, status FROM invoices WHERE invoicenumber = $1",
       [invoice_number],
     );
     if (invoiceResult.rows.length === 0) {
       return res.status(404).json({ status: "not_found" });
     }
     const dbStatus = invoiceResult.rows[0].status;
+    const isPartInvoice = requiresPartPayments(invoiceResult.rows[0].amount);
     if (["paid", "delivered", "completed"].includes(dbStatus)) {
       return res.json({ status: dbStatus });
     }
@@ -537,6 +632,14 @@ router.get("/poll/:invoice_number", async (req, res) => {
     );
     if (paymentResult.rows.length === 0) {
       return res.json({ status: dbStatus });
+    }
+    // Part-payment invoice whose latest part is already confirmed: report the
+    // progress instead of asking Campay again.
+    if (isPartInvoice && paymentResult.rows[0].status === "paid") {
+      return res.json({
+        status: "partially_paid",
+        progress: await getPaymentProgress(invoiceResult.rows[0]),
+      });
     }
     const paymentUUID = paymentResult.rows[0].providerpaymentid;
     // Use Campay's own reference for the status check if available;
@@ -561,10 +664,32 @@ router.get("/poll/:invoice_number", async (req, res) => {
 
     if (campayStatus === "SUCCESSFUL") {
       await processSuccessfulPayment(paymentUUID);
+      if (isPartInvoice) {
+        const after = await db.query(
+          "SELECT status FROM invoices WHERE id = $1",
+          [invoiceResult.rows[0].id],
+        );
+        const nowStatus = after.rows[0]?.status;
+        if (nowStatus === "partially_paid") {
+          return res.json({
+            status: "partially_paid",
+            progress: await getPaymentProgress(invoiceResult.rows[0]),
+          });
+        }
+        // Still being processed by the webhook: let the next poll resolve it.
+        return res.json({
+          status: nowStatus === "pending" ? "pending" : "paid",
+        });
+      }
       return res.json({ status: "paid" });
     }
 
-    return res.json({ status: dbStatus, campayStatus });
+    // A partially paid invoice with a new prompt in flight is still waiting.
+    return res.json({
+      status:
+        isPartInvoice && dbStatus === "partially_paid" ? "pending" : dbStatus,
+      campayStatus,
+    });
   } catch (err) {
     console.error(
       `❌ Poll error [${req.params.invoice_number}]:`,

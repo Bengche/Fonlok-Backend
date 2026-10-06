@@ -532,7 +532,8 @@ router.get("/payouts", adminMiddleware, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /admin/invoices/stuck?page=1&limit=10
-// Invoices in 'paid' or 'delivered' status that are awaiting fund release.
+// Invoices in 'paid' or 'delivered' status that are awaiting fund release, plus
+// 'partially_paid' invoices where the buyer's collected parts are held in escrow.
 // These are actionable — admin can see what is held up and contact parties.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/invoices/stuck", adminMiddleware, async (req, res) => {
@@ -555,17 +556,23 @@ router.get("/invoices/stuck", adminMiddleware, async (req, res) => {
            u.email AS seller_email,
            u.phone AS seller_phone,
            p.status AS payment_status,
-           p.createdat AS paid_at
+           p.createdat AS paid_at,
+           (SELECT COALESCE(SUM(amount), 0) FROM payments
+             WHERE invoiceid = i.id AND status = 'paid') AS paid_amount
          FROM invoices i
          JOIN users u ON u.id = i.userid
-         LEFT JOIN payments p ON p.invoiceid = i.id AND p.status = 'paid'
-         WHERE i.status IN ('paid', 'delivered')
+         LEFT JOIN LATERAL (
+           SELECT status, createdat FROM payments
+            WHERE invoiceid = i.id AND status = 'paid'
+            ORDER BY id DESC LIMIT 1
+         ) p ON true
+         WHERE i.status IN ('paid', 'delivered', 'partially_paid')
          ORDER BY i.createdat ASC
          LIMIT $1 OFFSET $2`,
         [limit, offset],
       ),
       db.query(
-        "SELECT COUNT(*) FROM invoices WHERE status IN ('paid', 'delivered')",
+        "SELECT COUNT(*) FROM invoices WHERE status IN ('paid', 'delivered', 'partially_paid')",
       ),
     ]);
 
@@ -2489,9 +2496,9 @@ router.post(
 
       const invoice = invR.rows[0];
 
-      if (!["paid", "delivered"].includes(invoice.status)) {
+      if (!["paid", "delivered", "partially_paid"].includes(invoice.status)) {
         return res.status(400).json({
-          message: `Invoice is in '${invoice.status}' status. Only 'paid' or 'delivered' invoices can be refunded.`,
+          message: `Invoice is in '${invoice.status}' status. Only 'paid', 'delivered' or 'partially_paid' invoices can be refunded.`,
         });
       }
 
@@ -2553,6 +2560,21 @@ router.post(
           (sum, m) => sum + Number(m.amount),
           0,
         );
+      }
+
+      // A partially paid invoice only holds what the buyer has actually paid so far.
+      if (invoice.status === "partially_paid") {
+        const paidSum = await db.query(
+          "SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoiceid = $1 AND status = 'paid'",
+          [invoice.id],
+        );
+        effectiveAmount = Number(paidSum.rows[0].paid);
+        unreleasedMilestones = [];
+        if (effectiveAmount <= 0) {
+          return res
+            .status(400)
+            .json({ message: "No confirmed payments found to refund." });
+        }
       }
 
       // 6. Fee calculation (3% — borne by buyer on refund, consistent with dispute flow)

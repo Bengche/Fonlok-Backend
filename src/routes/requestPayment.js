@@ -7,6 +7,11 @@ const router = express.Router();
 import dotenv from "dotenv";
 import { body } from "express-validator";
 import { validate } from "../middleware/validate.js";
+import {
+  requiresPartPayments,
+  getPaymentProgress,
+  hasRecentPendingPrompt,
+} from "../utils/paymentParts.js";
 
 dotenv.config();
 
@@ -49,7 +54,7 @@ router.post(
   async (req, res) => {
     const currency = "XAF";
     const {
-      amount,
+      amount: requestedAmount,
       phoneNumber,
       invoicename,
       invoicenumber,
@@ -57,6 +62,7 @@ router.post(
       email,
       userid,
     } = req.body;
+    let amount = requestedAmount;
     // console.log(phoneNumber);
 
     // Example: phoneNumber = "23767..." or "237699..."
@@ -90,6 +96,52 @@ router.post(
     // $1 and $2 are safe placeholders for variables
 
     try {
+      // Invoices above the mobile money limit are collected in parts. The server
+      // decides the amount of the next part; the amount sent by the browser is ignored.
+      let partInfo = null;
+      const partInvoice = await db.query(
+        "SELECT id, invoicenumber, amount, status FROM invoices WHERE id = $1",
+        [invoiceid],
+      );
+      if (
+        partInvoice.rows.length > 0 &&
+        requiresPartPayments(partInvoice.rows[0].amount)
+      ) {
+        const inv = partInvoice.rows[0];
+        if (inv.invoicenumber !== invoicenumber) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invoice details do not match." });
+        }
+        if (!["pending", "partially_paid"].includes(inv.status)) {
+          return res.status(409).json({
+            success: false,
+            message: "This invoice can no longer accept payments.",
+          });
+        }
+        if (await hasRecentPendingPrompt(inv.id)) {
+          return res.status(429).json({
+            success: false,
+            message:
+              "A payment prompt was just sent to your phone. Approve it, or wait about two minutes before trying again.",
+          });
+        }
+        const progress = await getPaymentProgress(inv);
+        if (progress.complete) {
+          return res.status(409).json({
+            success: false,
+            message: "This invoice has already been paid in full.",
+          });
+        }
+        amount = progress.next_part_amount;
+        partInfo = {
+          number: progress.next_part_number,
+          count: progress.part_count,
+          amount,
+          remaining_after: progress.remaining_amount - amount,
+        };
+      }
+
       // 1. Get a fresh Campay JWT token
       const authResponse = await axios.post(
         `${process.env.CAMPAY_BASE_URL}token/`,
@@ -126,23 +178,36 @@ router.post(
       }
 
       // 2. Request Payment (Collect)
-      const collectResponse = await axios.post(
-        `${process.env.CAMPAY_BASE_URL}collect/`,
-        {
-          amount: amount, //only whole intergers, no float numbers
-          currency: "XAF",
-          from: phoneNumber, // e.g. "237670000000"
-          description: `${invoicename}`,
-          external_reference: paymentUUID, // This links the payment to your DB
-          uuid: paymentUUID, //Must be unique for each request, to avoid idempotency...
-        },
-        {
-          headers: {
-            Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
+      let collectResponse;
+      try {
+        collectResponse = await axios.post(
+          `${process.env.CAMPAY_BASE_URL}collect/`,
+          {
+            amount: amount, //only whole intergers, no float numbers
+            currency: "XAF",
+            from: phoneNumber, // e.g. "237670000000"
+            description: `${invoicename}`,
+            external_reference: paymentUUID, // This links the payment to your DB
+            uuid: paymentUUID, //Must be unique for each request, to avoid idempotency...
           },
-        },
-      );
+          {
+            headers: {
+              Authorization: `Token ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      } catch (collectErr) {
+        // A refused prompt must not block the buyer's next attempt on a part invoice.
+        if (partInfo) {
+          await db
+            .query("DELETE FROM payments WHERE providerpaymentid = $1", [
+              paymentUUID,
+            ])
+            .catch(() => {});
+        }
+        throw collectErr;
+      }
 
       // 3. Persist Campay's own reference so the poll endpoint can use it
       //    for GET /api/transaction/{reference}/ status checks.
@@ -163,6 +228,7 @@ router.post(
       res.status(200).json({
         success: true,
         reference: campayReference,
+        ...(partInfo ? { part: partInfo } : {}),
         message:
           "Please Check your phone for the MoMo prompt, or dial *126#  or #150*50# to complete the payment.",
       });

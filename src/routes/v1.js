@@ -13,6 +13,7 @@
  *   POST /v1/payments/initiate                     — trigger buyer MoMo payment prompt
  *   GET  /v1/payments/:reference/status            — poll payment status
  *   POST /v1/payments/release                      — release held funds to seller (triggers Campay payout + emails)
+ *   POST /v1/payments/split/retry                  — retry a failed split payout on a released invoice
  *   POST /v1/payments/dispute                      — flag a paid invoice as disputed (holds funds)
  *   POST /v1/webhooks/register                     — register a webhook endpoint
  *   GET  /v1/webhooks                              — list registered webhooks
@@ -49,6 +50,20 @@ import {
 } from "../utils/emailTemplate.js";
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
+import {
+  validateSplitInput,
+  createInvoiceSplit,
+  getInvoiceSplit,
+  formatSplit,
+  payInvoiceSplit,
+} from "../utils/invoicePayoutSplit.js";
+import {
+  requiresPartPayments,
+  planPaymentParts,
+  getPaymentProgress,
+  hasRecentPendingPrompt,
+  MAX_PAYMENT_PART,
+} from "../utils/paymentParts.js";
 
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -298,7 +313,22 @@ router.post(
       description = null,
       reference = null,
       expires_at = null,
+      split: splitInput = null,
     } = req.body;
+
+    let splitToStore = null;
+    if (splitInput !== null && splitInput !== undefined) {
+      const checked = validateSplitInput(splitInput, {
+        grossAmount: parseFloat(amount),
+        sellerPhone: seller_phone,
+      });
+      if (checked.error) {
+        return res
+          .status(400)
+          .json({ error: "invalid_split", message: checked.error });
+      }
+      splitToStore = checked.split;
+    }
 
     try {
       // Ensure external reference is unique per API key owner if provided.
@@ -349,6 +379,23 @@ router.post(
 
       const inv = result.rows[0];
 
+      let splitRow = null;
+      if (splitToStore) {
+        try {
+          splitRow = await createInvoiceSplit(
+            inv.id,
+            req.apiKey.id,
+            splitToStore,
+          );
+        } catch (splitErr) {
+          // Never leave an invoice behind that is missing its requested split.
+          await db
+            .query("DELETE FROM invoices WHERE id = $1", [inv.id])
+            .catch(() => {});
+          throw splitErr;
+        }
+      }
+
       logger.info("Platform invoice created via API", {
         invoiceId: inv.id,
         invoiceNumber: inv.invoicenumber,
@@ -377,6 +424,14 @@ router.post(
         external_reference: inv.external_reference,
         expires_at: inv.expires_at,
         created_at: inv.created_at,
+        split: formatSplit(splitRow),
+        payment_plan: requiresPartPayments(inv.amount)
+          ? {
+              part_count: planPaymentParts(inv.amount).length,
+              parts: planPaymentParts(inv.amount),
+              max_part_amount: MAX_PAYMENT_PART,
+            }
+          : null,
       });
     } catch (err) {
       logger.error("Failed to create platform invoice via API", {
@@ -509,6 +564,8 @@ router.get(
         created_at: inv.created_at,
         paid_at: inv.paid_at,
         delivered_at: inv.delivered_at,
+        split: formatSplit(await getInvoiceSplit(inv.id)),
+        payment_progress: await getPaymentProgress(inv),
         ...(chatLinks ? { chat_links: chatLinks } : {}),
       });
     } catch (err) {
@@ -574,10 +631,16 @@ router.post(
 
       const inv = invResult.rows[0];
 
-      if (inv.status !== "pending") {
+      // Invoices above the mobile money limit are collected in parts, so they stay
+      // payable while 'partially_paid'.
+      const isPartInvoice = requiresPartPayments(inv.amount);
+      const payableStatuses = isPartInvoice
+        ? ["pending", "partially_paid"]
+        : ["pending"];
+      if (!payableStatuses.includes(inv.status)) {
         return res.status(409).json({
           error: "invalid_invoice_status",
-          message: `Cannot initiate payment for an invoice with status '${inv.status}'. Only 'pending' invoices can be paid.`,
+          message: `Cannot initiate payment for an invoice with status '${inv.status}'. Only ${payableStatuses.map((s) => `'${s}'`).join(" or ")} invoices can be paid.`,
         });
       }
 
@@ -589,6 +652,32 @@ router.post(
         });
       }
 
+      let chargeAmount = inv.amount;
+      let partInfo = null;
+      if (isPartInvoice) {
+        if (await hasRecentPendingPrompt(inv.id)) {
+          return res.status(429).json({
+            error: "payment_in_progress",
+            message:
+              "A payment prompt was just sent for this invoice. Wait for the buyer to approve it, or try again in about two minutes.",
+          });
+        }
+        const progress = await getPaymentProgress(inv);
+        if (progress.complete) {
+          return res.status(409).json({
+            error: "invalid_invoice_status",
+            message: "This invoice has already been paid in full.",
+          });
+        }
+        chargeAmount = progress.next_part_amount;
+        partInfo = {
+          number: progress.next_part_number,
+          count: progress.part_count,
+          amount: chargeAmount,
+          remaining_after: progress.remaining_amount - chargeAmount,
+        };
+      }
+
       const provider = detectProvider(phone_number);
       const paymentUUID = crypto.randomUUID();
 
@@ -598,7 +687,7 @@ router.post(
         `INSERT INTO payments
            (invoiceid, provider, providerpaymentid, amount, currency)
          VALUES ($1, $2, $3, $4, $5)`,
-        [inv.id, provider, paymentUUID, inv.amount, inv.currency],
+        [inv.id, provider, paymentUUID, chargeAmount, inv.currency],
       );
 
       // 3. Save buyer contact details (for emails and confirmation code).
@@ -651,7 +740,7 @@ router.post(
         campayResponse = await axios.post(
           `${process.env.CAMPAY_BASE_URL}collect/`,
           {
-            amount: String(Math.floor(inv.amount)),
+            amount: String(Math.floor(chargeAmount)),
             currency: "XAF",
             from: phone_number,
             description: `Fonlok escrow payment for: ${inv.invoicename}`,
@@ -709,7 +798,8 @@ router.post(
         type: "payment.initiated",
         invoice_id: inv.invoicenumber,
         reference: paymentUUID,
-        amount: parseFloat(inv.amount),
+        amount: parseFloat(chargeAmount),
+        ...(partInfo ? { part: partInfo } : {}),
         currency: inv.currency,
         provider,
         phone_number,
@@ -721,7 +811,10 @@ router.post(
         object: "payment",
         reference: paymentUUID,
         invoice_id: inv.invoicenumber,
-        amount: parseFloat(inv.amount),
+        amount: parseFloat(chargeAmount),
+        ...(partInfo
+          ? { invoice_amount: parseFloat(inv.amount), part: partInfo }
+          : {}),
         currency: inv.currency,
         provider,
         phone_number,
@@ -774,7 +867,9 @@ router.get(
                 p.provider,
                 p.created_at,
                 i.invoicenumber AS invoice_id,
-                i.status AS invoice_status
+                i.status AS invoice_status,
+                i.id AS invoice_pk,
+                i.amount AS invoice_amount
          FROM payments p
          JOIN invoices i ON i.id = p.invoiceid
          WHERE p.providerpaymentid = $1
@@ -798,7 +893,11 @@ router.get(
         currency: row.currency,
         provider: row.provider,
         status: row.status, // "pending" | "paid" | "failed"
-        invoice_status: row.invoice_status, // "pending" | "paid" | "delivered" | "completed" | "disputed" | "cancelled"
+        invoice_status: row.invoice_status, // "pending" | "partially_paid" | "paid" | "delivered" | "completed" | "disputed" | "cancelled"
+        payment_progress: await getPaymentProgress({
+          id: row.invoice_pk,
+          amount: row.invoice_amount,
+        }),
         created_at: row.created_at,
       });
     } catch (err) {
@@ -824,6 +923,10 @@ router.get(
 //
 // Only invoices in 'paid' status (funds held) can be released.
 // This operation is atomic — concurrent calls for the same invoice are safe.
+//
+// Optional split: pass { split: { phone, type, value, name? } } here (or when creating
+// the invoice) to pay a commission to another MoMo number. The seller then receives
+// gross - fee - split, and the split is sent right after the seller's payout.
 router.post(
   "/payments/release",
   [body("invoice_id").trim().notEmpty().withMessage("invoice_id is required.")],
@@ -833,6 +936,44 @@ router.post(
     const { invoice_id } = req.body;
 
     try {
+      // Release-time split: validated and stored before the invoice is claimed,
+      // so bad input never flips the invoice status.
+      if (req.body.split !== undefined && req.body.split !== null) {
+        const pre = await db.query(
+          `SELECT id, amount, seller_phone, status FROM invoices
+           WHERE invoicenumber = $1 AND userid = $2 AND created_via_api = true`,
+          [invoice_id, platformUserId],
+        );
+        if (pre.rows.length > 0 && pre.rows[0].status === "paid") {
+          const preInv = pre.rows[0];
+          const checked = validateSplitInput(req.body.split, {
+            grossAmount: parseFloat(preInv.amount),
+            sellerPhone: preInv.seller_phone,
+          });
+          if (checked.error) {
+            return res
+              .status(400)
+              .json({ error: "invalid_split", message: checked.error });
+          }
+          const existing = await getInvoiceSplit(preInv.id);
+          if (existing) {
+            const same =
+              existing.recipient_phone === checked.split.phone &&
+              existing.split_type === checked.split.type &&
+              Number(existing.split_value) === checked.split.value;
+            if (!same) {
+              return res.status(409).json({
+                error: "split_already_defined",
+                message:
+                  "This invoice already has a different split. A split cannot be changed once defined.",
+              });
+            }
+          } else {
+            await createInvoiceSplit(preInv.id, req.apiKey.id, checked.split);
+          }
+        }
+      }
+
       // Atomic claim: UPDATE only succeeds when status = 'paid'.
       // Concurrent calls will find status already 'completed' and get 0 rows.
       const claimResult = await db.query(
@@ -871,7 +1012,9 @@ router.post(
       const grossAmount = parseFloat(inv.amount);
       const TOTAL_FEE_RATE = 0.02; // 2% platform fee (Campay takes ~1% separately)
       const platformFee = Math.floor(grossAmount * TOTAL_FEE_RATE);
-      const sellerReceives = grossAmount - platformFee;
+      const splitRow = await getInvoiceSplit(inv.id);
+      const splitAmount = splitRow ? Number(splitRow.amount) : 0;
+      const sellerReceives = grossAmount - platformFee - splitAmount;
 
       // Authenticate with Campay.
       let campayToken;
@@ -944,6 +1087,10 @@ router.post(
           logger.warn("Failed to record payout row", { error: e.message }),
         );
 
+      // Split leg: runs only after the seller was paid; failures never undo the release.
+      const splitResult = splitRow ? await payInvoiceSplit(inv) : null;
+      const splitPublic = splitResult ? formatSplit(splitResult.split) : null;
+
       logger.info("API payment released", {
         invoiceNumber: inv.invoicenumber,
         sellerPhone: inv.seller_phone,
@@ -956,7 +1103,7 @@ router.post(
       try {
         if (inv.seller_email) {
           const emailDisplayFee = Math.round(grossAmount * 0.03);
-          const emailSellerNet = grossAmount - emailDisplayFee;
+          const emailSellerNet = grossAmount - emailDisplayFee - splitAmount;
           const payoutCopy = buildEmailCopy("en", "payoutConfirmed");
           const feeLabel = `${payoutCopy.feeLabel} (3%)`;
           const sellerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${inv.invoicenumber}`;
@@ -987,6 +1134,15 @@ router.post(
                 ["Invoice Name", inv.invoicename],
                 [payoutCopy.grossAmount, `${grossAmount} XAF`],
                 [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+                ...(splitAmount > 0
+                  ? [
+                      [
+                        "Platform commission",
+                        `-${splitAmount} XAF`,
+                        "color:#dc2626;",
+                      ],
+                    ]
+                  : []),
                 [
                   payoutCopy.amountSent,
                   `${emailSellerNet} XAF`,
@@ -1087,9 +1243,20 @@ router.post(
         gross_amount: grossAmount,
         platform_fee: platformFee,
         seller_receives: sellerReceives,
+        split: splitPublic,
         currency: inv.currency,
         timestamp: new Date().toISOString(),
       }).catch(() => {});
+
+      if (splitPublic && splitPublic.status === "failed") {
+        deliverWebhookEvent(platformUserId, "payout.split_failed", {
+          object: "event",
+          type: "payout.split_failed",
+          invoice_id: inv.invoicenumber,
+          split: splitPublic,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+      }
 
       return res.json({
         object: "release",
@@ -1098,6 +1265,7 @@ router.post(
         gross_amount: grossAmount,
         platform_fee: platformFee,
         seller_receives: sellerReceives,
+        split: splitPublic,
         currency: inv.currency,
         seller_phone: inv.seller_phone,
         message: `${sellerReceives.toLocaleString()} XAF dispatched to ${inv.seller_phone} via Mobile Money.`,
@@ -1113,6 +1281,79 @@ router.post(
         error: "server_error",
         message:
           "An unexpected error occurred during release. Please try again.",
+      });
+    }
+  },
+);
+
+// ── POST /v1/payments/split/retry — retry a failed split payout ──────────────
+//
+// If the split leg of a release was refused by the mobile money network, the seller
+// has still been paid and the invoice is completed. Call this to send the split again.
+// Only a split with status 'failed' can be retried; 'processing' is under review
+// because the network did not confirm whether the money moved.
+router.post(
+  "/payments/split/retry",
+  [body("invoice_id").trim().notEmpty().withMessage("invoice_id is required.")],
+  validate,
+  async (req, res) => {
+    const platformUserId = req.apiKey.user_id;
+    const { invoice_id } = req.body;
+
+    try {
+      const invResult = await db.query(
+        `SELECT id, invoicenumber, invoicename, status FROM invoices
+         WHERE invoicenumber = $1 AND userid = $2 AND created_via_api = true`,
+        [invoice_id, platformUserId],
+      );
+      if (invResult.rows.length === 0) {
+        return res.status(404).json({
+          error: "invoice_not_found",
+          message: `No API invoice found with id '${invoice_id}'.`,
+        });
+      }
+      const inv = invResult.rows[0];
+      const existing = await getInvoiceSplit(inv.id);
+      if (!existing) {
+        return res.status(404).json({
+          error: "split_not_found",
+          message: "This invoice has no split.",
+        });
+      }
+      if (inv.status !== "completed" || existing.status !== "failed") {
+        return res.status(409).json({
+          error: "split_not_retryable",
+          message: `Only a failed split on a completed invoice can be retried. Invoice status: '${inv.status}', split status: '${existing.status}'.`,
+        });
+      }
+
+      const { split } = await payInvoiceSplit(inv);
+      const splitPublic = formatSplit(split);
+      const eventType =
+        splitPublic.status === "paid"
+          ? "payout.split_completed"
+          : "payout.split_failed";
+      deliverWebhookEvent(platformUserId, eventType, {
+        object: "event",
+        type: eventType,
+        invoice_id: inv.invoicenumber,
+        split: splitPublic,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+
+      return res.status(splitPublic.status === "paid" ? 200 : 502).json({
+        object: "split_retry",
+        invoice_id: inv.invoicenumber,
+        split: splitPublic,
+      });
+    } catch (err) {
+      logger.error("Split retry failed", {
+        error: err.message,
+        keyId: req.apiKey.id,
+      });
+      return res.status(500).json({
+        error: "server_error",
+        message: "Could not retry the split payout. Please try again.",
       });
     }
   },

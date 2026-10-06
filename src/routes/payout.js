@@ -11,6 +11,10 @@ import { getUserEmailLanguageById } from "../utils/userLanguage.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { deliverWebhookEvent } from "./v1.js";
+import {
+  getInvoiceSplit,
+  settleInvoiceSplit,
+} from "../utils/invoicePayoutSplit.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -156,10 +160,18 @@ const executePayout = async (invoiceId) => {
   // For API-created invoices (e.g. Njimbong) money and emails must go to the
   // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
   // account (invoiceUser). For native invoices invoiceUser IS the seller.
-  const isApiInvoice = !!(invoiceRow.created_via_api && invoiceRow.seller_phone);
-  const payoutPhone = isApiInvoice ? invoiceRow.seller_phone : invoiceUser.phone;
-  const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
-  const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
+  const isApiInvoice = !!(
+    invoiceRow.created_via_api && invoiceRow.seller_phone
+  );
+  const payoutPhone = isApiInvoice
+    ? invoiceRow.seller_phone
+    : invoiceUser.phone;
+  const payoutEmail = isApiInvoice
+    ? invoiceRow.seller_email || null
+    : invoiceUser.email;
+  const payoutName = isApiInvoice
+    ? invoiceRow.seller_name || invoiceUser.name
+    : invoiceUser.name;
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Step 3: Determine referral and calculate fees Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Check for a referrer BEFORE computing fees so the correct split is used.
@@ -177,7 +189,10 @@ const executePayout = async (invoiceId) => {
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2% â€” Fonlok's net
-  const sellerReceives = grossAmount - totalFee; // always gross - 2% (Campay takes 1% on top)
+  // API invoices may carry a developer split, paid out of the seller's share.
+  const splitRow = isApiInvoice ? await getInvoiceSplit(invoiceRow.id) : null;
+  const splitAmount = splitRow ? Number(splitRow.amount) : 0;
+  const sellerReceives = grossAmount - totalFee - splitAmount; // always gross - 2% - split (Campay takes 1% on top)
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -204,6 +219,9 @@ const executePayout = async (invoiceId) => {
     },
     { headers: { Authorization: `Token ${campayAuthLegacy1.data.token}` } },
   );
+
+  // Split leg runs only after the seller was paid and never undoes the payout.
+  if (splitRow) await settleInvoiceSplit(invoiceRow, deliverWebhookEvent);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5: Record the payout & mark invoice completed Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   await db.query(
@@ -321,8 +339,10 @@ const executePayout = async (invoiceId) => {
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
   // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
-  const emailDisplayFee = Math.round(grossAmount * (hasReferral ? 0.025 : 0.03));
-  const emailSellerNet  = grossAmount - emailDisplayFee;
+  const emailDisplayFee = Math.round(
+    grossAmount * (hasReferral ? 0.025 : 0.03),
+  );
+  const emailSellerNet = grossAmount - emailDisplayFee;
   const feeLabel = hasReferral
     ? `${payoutCopy.feeLabel} (2.5%)`
     : `${payoutCopy.feeLabel} (3%)`;
@@ -347,9 +367,12 @@ const executePayout = async (invoiceId) => {
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
         [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+        ...(splitAmount > 0
+          ? [["Platform commission", `-${splitAmount} XAF`, "color:#dc2626;"]]
+          : []),
         [
           payoutCopy.amountSent,
-          `${emailSellerNet} XAF`,
+          `${emailSellerNet - splitAmount} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, payoutPhone],
@@ -394,7 +417,10 @@ const executePayout = async (invoiceId) => {
       const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
       let buyerPdfAttachment = null;
       try {
-        const pdfBuf = await generateReceiptPdf(invoiceRow.invoicenumber, buyerLang);
+        const pdfBuf = await generateReceiptPdf(
+          invoiceRow.invoicenumber,
+          buyerLang,
+        );
         buyerPdfAttachment = {
           content: pdfBuf.toString("base64"),
           filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -402,7 +428,10 @@ const executePayout = async (invoiceId) => {
           disposition: "attachment",
         };
       } catch (pdfErr) {
-        console.error("âš ï¸ Could not generate buyer release receipt PDF:", pdfErr.message);
+        console.error(
+          "âš ï¸ Could not generate buyer release receipt PDF:",
+          pdfErr.message,
+        );
       }
       await sgMail.send({
         to: buyer.email,
@@ -421,7 +450,11 @@ const executePayout = async (invoiceId) => {
               invoiceRow.invoicename,
             ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
-            [releasedCopy.feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+            [
+              releasedCopy.feeLabel,
+              `-${emailDisplayFee} XAF`,
+              "color:#dc2626;",
+            ],
             [
               releasedCopy.sellerReceived,
               `${emailSellerNet} XAF`,
@@ -500,10 +533,18 @@ const executePayoutLink = async (invoiceId) => {
   // For API-created invoices (e.g. Njimbong) money and emails must go to the
   // third-party seller specified on the invoice, NOT to Njimbong's own Fonlok
   // account (invoiceUser). For native invoices invoiceUser IS the seller.
-  const isApiInvoice = !!(invoiceRow.created_via_api && invoiceRow.seller_phone);
-  const payoutPhone = isApiInvoice ? invoiceRow.seller_phone : invoiceUser.phone;
-  const payoutEmail = isApiInvoice ? (invoiceRow.seller_email || null) : invoiceUser.email;
-  const payoutName  = isApiInvoice ? (invoiceRow.seller_name  || invoiceUser.name) : invoiceUser.name;
+  const isApiInvoice = !!(
+    invoiceRow.created_via_api && invoiceRow.seller_phone
+  );
+  const payoutPhone = isApiInvoice
+    ? invoiceRow.seller_phone
+    : invoiceUser.phone;
+  const payoutEmail = isApiInvoice
+    ? invoiceRow.seller_email || null
+    : invoiceUser.email;
+  const payoutName = isApiInvoice
+    ? invoiceRow.seller_name || invoiceUser.name
+    : invoiceUser.name;
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Step 3: Determine referral and calculate fees Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const referrerCheck = await db.query(
@@ -518,7 +559,10 @@ const executePayoutLink = async (invoiceId) => {
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
   const fonlokNet = totalFee - referralEarning; // 1.5% or 2% â€” Fonlok's net
-  const sellerReceives = grossAmount - totalFee; // gross - 2%
+  // API invoices may carry a developer split, paid out of the seller's share.
+  const splitRow = isApiInvoice ? await getInvoiceSplit(invoiceRow.id) : null;
+  const splitAmount = splitRow ? Number(splitRow.amount) : 0;
+  const sellerReceives = grossAmount - totalFee - splitAmount; // gross - 2% - split
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -545,6 +589,9 @@ const executePayoutLink = async (invoiceId) => {
     },
     { headers: { Authorization: `Token ${campayAuthLegacy2.data.token}` } },
   );
+
+  // Split leg runs only after the seller was paid and never undoes the payout.
+  if (splitRow) await settleInvoiceSplit(invoiceRow, deliverWebhookEvent);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Step 5: Record the payout & mark invoice completed Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   await db.query(
@@ -655,8 +702,10 @@ const executePayoutLink = async (invoiceId) => {
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
   // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
-  const emailDisplayFee = Math.round(grossAmount * (hasReferral ? 0.025 : 0.03));
-  const emailSellerNet  = grossAmount - emailDisplayFee;
+  const emailDisplayFee = Math.round(
+    grossAmount * (hasReferral ? 0.025 : 0.03),
+  );
+  const emailSellerNet = grossAmount - emailDisplayFee;
   const feeLabel = hasReferral
     ? `${payoutCopy.feeLabel} (2.5%)`
     : `${payoutCopy.feeLabel} (3%)`;
@@ -681,9 +730,12 @@ const executePayoutLink = async (invoiceId) => {
         ],
         [payoutCopy.grossAmount, `${grossAmount} XAF`],
         [feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+        ...(splitAmount > 0
+          ? [["Platform commission", `-${splitAmount} XAF`, "color:#dc2626;"]]
+          : []),
         [
           payoutCopy.amountSent,
-          `${emailSellerNet} XAF`,
+          `${emailSellerNet - splitAmount} XAF`,
           "font-weight:700;color:#16a34a;font-size:15px;",
         ],
         [payoutCopy.sentTo, payoutPhone],
@@ -728,7 +780,10 @@ const executePayoutLink = async (invoiceId) => {
       const buyerReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
       let buyerPdfAttachment = null;
       try {
-        const pdfBuf = await generateReceiptPdf(invoiceRow.invoicenumber, buyerLang);
+        const pdfBuf = await generateReceiptPdf(
+          invoiceRow.invoicenumber,
+          buyerLang,
+        );
         buyerPdfAttachment = {
           content: pdfBuf.toString("base64"),
           filename: `fonlok-receipt-${invoiceRow.invoicenumber}.pdf`,
@@ -736,7 +791,10 @@ const executePayoutLink = async (invoiceId) => {
           disposition: "attachment",
         };
       } catch (pdfErr) {
-        console.error("âš ï¸ Could not generate buyer release receipt PDF:", pdfErr.message);
+        console.error(
+          "âš ï¸ Could not generate buyer release receipt PDF:",
+          pdfErr.message,
+        );
       }
       await sgMail.send({
         to: buyer.email,
@@ -755,7 +813,11 @@ const executePayoutLink = async (invoiceId) => {
               invoiceRow.invoicename,
             ],
             [releasedCopy.grossAmount, `${grossAmount} XAF`],
-            [releasedCopy.feeLabel, `-${emailDisplayFee} XAF`, "color:#dc2626;"],
+            [
+              releasedCopy.feeLabel,
+              `-${emailDisplayFee} XAF`,
+              "color:#dc2626;",
+            ],
             [
               releasedCopy.sellerReceived,
               `${emailSellerNet} XAF`,
@@ -830,7 +892,7 @@ router.post("/release-funds", async (req, res) => {
 
     // Step 2: Confirm the invoice has been paid
     const paymentCheck = await db.query(
-      "SELECT * FROM payments WHERE invoiceid = $1",
+      "SELECT * FROM payments WHERE invoiceid = $1 ORDER BY (status = 'paid') DESC, id DESC LIMIT 1",
       [invoiceId],
     );
     const payment = paymentCheck.rows[0];
@@ -1000,7 +1062,7 @@ router.post("/verify-payout/:token/:id", async (req, res) => {
 
     // Re-verify that the payment is actually paid before releasing
     const paymentCheck = await db.query(
-      "SELECT status FROM payments WHERE invoiceid = $1",
+      "SELECT status FROM payments WHERE invoiceid = $1 ORDER BY (status = 'paid') DESC, id DESC LIMIT 1",
       [userInvoiceId],
     );
     if (!paymentCheck.rows[0] || paymentCheck.rows[0].status !== "paid") {
@@ -1172,15 +1234,13 @@ router.post("/release-milestone/:token", async (req, res) => {
       milestone.seller_user_id,
     ]);
     if (sellerResult.rows.length === 0) {
-      return res
-        .status(404)
-        .send(
-          renderPage({
-            type: "error",
-            title: "Seller Not Found",
-            body: "The seller account could not be found.",
-          }),
-        );
+      return res.status(404).send(
+        renderPage({
+          type: "error",
+          title: "Seller Not Found",
+          body: "The seller account could not be found.",
+        }),
+      );
     }
     const seller = sellerResult.rows[0];
 
@@ -1727,7 +1787,9 @@ router.post("/release-milestone/confirm", async (req, res) => {
           { footerNote: releasedCopy.footerNote },
         ),
       });
-      console.log(`âœ… Buyer milestone release email sent to ${buyerRow.email}`);
+      console.log(
+        `âœ… Buyer milestone release email sent to ${buyerRow.email}`,
+      );
     } catch (buyerEmailErr) {
       console.error(
         "âš ï¸ Buyer milestone release email error (confirm):",

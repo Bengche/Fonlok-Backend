@@ -18,6 +18,7 @@ import {
 import { generateReceiptPdf } from "../utils/generateReceipt.js";
 import { buildEmailCopy } from "../utils/emailLanguageCopy.js";
 import { getUserEmailLanguageByEmail } from "../utils/userLanguage.js";
+import { getPaymentProgress } from "../utils/paymentParts.js";
 dotenv.config();
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -107,7 +108,6 @@ router.post(
       .isLength({ max: 200 })
       .withMessage("Invoice name must be 200 characters or fewer.")
       .escape(),
-
 
     body("currency")
       .trim()
@@ -392,8 +392,14 @@ router.delete("/delete/:id", authMiddleware, async (req, res) => {
     }
 
     // 3. Block deletion if the invoice has an active or completed payment lifecycle
-    if (["paid", "delivered", "completed"].includes(invoice.status)) {
+    if (
+      ["paid", "delivered", "completed", "partially_paid"].includes(
+        invoice.status,
+      )
+    ) {
       const statusMessages = {
+        partially_paid:
+          "This invoice cannot be deleted because the buyer has already paid part of it. Funds are held in escrow.",
         paid: "This invoice cannot be deleted because the buyer has already paid. Funds are held in escrow.",
         delivered:
           "This invoice cannot be deleted because delivery has been marked and is awaiting buyer confirmation.",
@@ -468,8 +474,14 @@ router.patch("/edit/:id", authMiddleware, async (req, res) => {
     }
 
     // 3. Block editing if the invoice has entered the payment lifecycle
-    if (["paid", "delivered", "completed"].includes(invoice.status)) {
+    if (
+      ["paid", "delivered", "completed", "partially_paid"].includes(
+        invoice.status,
+      )
+    ) {
       const statusMessages = {
+        partially_paid:
+          "This invoice cannot be edited because the buyer has already paid part of it. Funds are held in escrow.",
         paid: "This invoice cannot be edited because the buyer has already paid. Funds are held in escrow.",
         delivered:
           "This invoice cannot be edited because delivery has been marked and is awaiting buyer confirmation.",
@@ -574,7 +586,11 @@ router.get("/link/:id", async (req, res) => {
       ).catch(() => {});
     }
 
-    return res.status(200).json({ invoice_details: invoice_details });
+    return res.status(200).json({
+      invoice_details: invoice_details,
+      // Only present for invoices above the mobile money limit.
+      payment_progress: await getPaymentProgress(invoice_details),
+    });
   } catch (error) {
     console.log(error.message);
     return res.status(500).json({

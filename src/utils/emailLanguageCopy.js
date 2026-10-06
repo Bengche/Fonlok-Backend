@@ -79,6 +79,23 @@ const COPY = {
       confirmButton: "Confirm Receipt &amp; Release Funds",
       codeMessage: "Alternatively, give this release code to the seller:",
     },
+    partPaymentReceived: {
+      subject: (invoiceNumber, part, count) =>
+        `Part ${part} of ${count} Received - Invoice ${invoiceNumber} | Fonlok`,
+      title: (part, count) => `Part ${part} of ${count} Received`,
+      body: (invoiceNumber) =>
+        `Your payment has been received and is held securely in escrow. Invoice <strong>${invoiceNumber}</strong> is above the mobile money limit, so it is collected in several parts. The seller is only notified to deliver once every part has been paid.`,
+      partLabel: "This Payment",
+      paidLabel: "Total Paid So Far",
+      remainingLabel: "Remaining",
+      nextLabel: "Next Part",
+      statusLabel: "Status",
+      status: "&#10003;&nbsp;Part Held in Escrow",
+      nextStep: "Pay the remaining part to complete your purchase:",
+      button: "Pay Next Part",
+      footerNote:
+        "You received this email because a part payment was confirmed on Fonlok. Funds stay in escrow and are never released to the seller until you confirm delivery.",
+    },
     chatInvite: {
       subject: (invoiceNumber) =>
         `Your Secure Chat Link - Invoice ${invoiceNumber} | Fonlok`,
@@ -146,7 +163,8 @@ const COPY = {
       grossAmount: "Gross Amount",
       feeLabel: "Platform Fee (3%)",
       sellerReceived: "Seller Received",
-      receiptMessage: "Your transaction receipt is ready — download it for your records.",
+      receiptMessage:
+        "Your transaction receipt is ready — download it for your records.",
       downloadButton: "Download Receipt",
       reviewTitle: "Share Your Experience",
       reviewBody:
@@ -236,6 +254,23 @@ const COPY = {
       confirmButton: "Confirmer la réception et libérer les fonds",
       codeMessage: "Alternativement, donnez ce code de libération au vendeur :",
     },
+    partPaymentReceived: {
+      subject: (invoiceNumber, part, count) =>
+        `Partie ${part} sur ${count} reçue - Facture ${invoiceNumber} | Fonlok`,
+      title: (part, count) => `Partie ${part} sur ${count} reçue`,
+      body: (invoiceNumber) =>
+        `Votre paiement a été reçu et est conservé en séquestre. La facture <strong>${invoiceNumber}</strong> dépasse la limite du mobile money, elle est donc encaissée en plusieurs parties. Le vendeur n'est invité à livrer qu'une fois toutes les parties payées.`,
+      partLabel: "Ce paiement",
+      paidLabel: "Total payé à ce jour",
+      remainingLabel: "Reste à payer",
+      nextLabel: "Prochaine partie",
+      statusLabel: "Statut",
+      status: "&#10003;&nbsp;Partie conservée en séquestre",
+      nextStep: "Payez la partie restante pour finaliser votre achat :",
+      button: "Payer la partie suivante",
+      footerNote:
+        "Vous avez reçu cet e-mail car un paiement partiel a été confirmé sur Fonlok. Les fonds restent en séquestre et ne sont jamais libérés au vendeur sans votre confirmation de livraison.",
+    },
     chatInvite: {
       subject: (invoiceNumber) =>
         `Votre lien de chat sécurisé - Facture ${invoiceNumber} | Fonlok`,
@@ -303,7 +338,8 @@ const COPY = {
       grossAmount: "Montant brut",
       feeLabel: "Frais de plateforme (3 %)",
       sellerReceived: "Vendeur a reçu",
-      receiptMessage: "Votre reçu de transaction est disponible — téléchargez-le pour vos archives.",
+      receiptMessage:
+        "Votre reçu de transaction est disponible — téléchargez-le pour vos archives.",
       downloadButton: "Télécharger le reçu",
       reviewTitle: "Partagez votre expérience",
       reviewBody:
