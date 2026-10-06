@@ -827,9 +827,14 @@ app.listen(PORT, async () => {
 
   // Add approval gate to live API keys.
   // Any key with approved_at IS NULL is blocked until an admin approves it.
-  // All keys that existed before this migration are auto-approved so live
-  // integrations (e.g. Njimbong) are not interrupted.
+  // Keys that existed when the gate was first introduced are auto-approved once
+  // so live integrations (e.g. Njimbong) are not interrupted.
   try {
+    const gateExists = await db.query(`
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'api_keys' AND column_name = 'approved_at'
+    `);
+    const gateIsNew = gateExists.rows.length === 0;
     await db.query(`
       ALTER TABLE api_keys
         ADD COLUMN IF NOT EXISTS approved_at      TIMESTAMPTZ DEFAULT NULL,
@@ -840,16 +845,19 @@ app.listen(PORT, async () => {
         ADD COLUMN IF NOT EXISTS rejected_at      TIMESTAMPTZ  DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS rejection_reason TEXT         DEFAULT NULL
     `);
-    // Auto-approve every key that was created before this gate was introduced.
-    const { rowCount } = await db.query(`
-      UPDATE api_keys
-      SET approved_at = NOW()
-      WHERE approved_at IS NULL AND revoked_at IS NULL
-    `);
-    if (rowCount > 0) {
-      logger.info(
-        `api_keys approval gate: ${rowCount} existing key(s) auto-approved`,
-      );
+    // Backfill only when the column was just created; running it on every boot
+    // would approve every pending application at the next restart or deploy.
+    if (gateIsNew) {
+      const { rowCount } = await db.query(`
+        UPDATE api_keys
+        SET approved_at = NOW()
+        WHERE approved_at IS NULL AND revoked_at IS NULL
+      `);
+      if (rowCount > 0) {
+        logger.info(
+          `api_keys approval gate: ${rowCount} existing key(s) auto-approved`,
+        );
+      }
     }
     logger.info("api_keys approval gate columns ready");
   } catch (err) {
