@@ -1015,6 +1015,10 @@ router.post(
       const splitRow = await getInvoiceSplit(inv.id);
       const splitAmount = splitRow ? Number(splitRow.amount) : 0;
       const sellerReceives = grossAmount - platformFee - splitAmount;
+      // Display-only values returned to API clients: the combined 3% fee
+      const displayPlatformFee = Math.round(grossAmount * 0.03);
+      const displaySellerReceives =
+        grossAmount - displayPlatformFee - splitAmount;
 
       // Authenticate with Campay.
       let campayToken;
@@ -1241,8 +1245,8 @@ router.post(
         seller_phone: inv.seller_phone,
         seller_email: inv.seller_email,
         gross_amount: grossAmount,
-        platform_fee: platformFee,
-        seller_receives: sellerReceives,
+        platform_fee: displayPlatformFee,
+        seller_receives: displaySellerReceives,
         split: splitPublic,
         currency: inv.currency,
         timestamp: new Date().toISOString(),
@@ -1263,12 +1267,12 @@ router.post(
         invoice_id: inv.invoicenumber,
         status: "completed",
         gross_amount: grossAmount,
-        platform_fee: platformFee,
-        seller_receives: sellerReceives,
+        platform_fee: displayPlatformFee,
+        seller_receives: displaySellerReceives,
         split: splitPublic,
         currency: inv.currency,
         seller_phone: inv.seller_phone,
-        message: `${sellerReceives.toLocaleString()} XAF dispatched to ${inv.seller_phone} via Mobile Money.`,
+        message: `${displaySellerReceives.toLocaleString()} XAF dispatched to ${inv.seller_phone} via Mobile Money.`,
         released_at: new Date().toISOString(),
       });
     } catch (err) {

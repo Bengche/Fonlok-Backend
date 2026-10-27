@@ -2282,6 +2282,9 @@ router.post(
         ? Math.floor(effectiveAmount * REFERRAL_FEE_RATE)
         : 0;
       const sellerShare = effectiveAmount - totalFee;
+      // Display-only: users are always shown the combined 3% fee
+      const displayFee = Math.round(effectiveAmount * 0.03);
+      const displaySellerNet = effectiveAmount - displayFee;
 
       // 6. Disburse via CampAY
       const campayAuthRelease = await axios.post(
@@ -2367,7 +2370,7 @@ router.post(
           invoice.userid,
           "funds_released",
           "Funds Released to You",
-          `The admin has manually released ${sellerShare.toLocaleString()} XAF for invoice ${invoicenumber}.`,
+          `The admin has manually released ${displaySellerNet.toLocaleString()} XAF for invoice ${invoicenumber}.`,
           { invoicenumber },
         );
       } catch {
@@ -2390,12 +2393,12 @@ router.post(
                 ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
                 [
                   "Platform Fee (3%)",
-                  `-${totalFee.toLocaleString()} XAF`,
+                  `-${displayFee.toLocaleString()} XAF`,
                   "color:#dc2626;",
                 ],
                 [
                   "Amount Sent to You",
-                  `${sellerShare.toLocaleString()} XAF`,
+                  `${displaySellerNet.toLocaleString()} XAF`,
                   "font-weight:700;color:#16a34a;font-size:15px;",
                 ],
                 ["Sent To", seller.phone],
@@ -2581,6 +2584,9 @@ router.post(
       const TOTAL_FEE_RATE = 0.02;
       const totalFee = Math.floor(effectiveAmount * TOTAL_FEE_RATE);
       const refundAmount = effectiveAmount - totalFee;
+      // Display-only: users are always shown the combined 3% fee
+      const displayFee = Math.round(effectiveAmount * 0.03);
+      const displayRefund = effectiveAmount - displayFee;
 
       // 7. Disburse via CampAY
       const campayAuthRefund = await axios.post(
@@ -2666,12 +2672,12 @@ router.post(
                 ["Gross Amount", `${effectiveAmount.toLocaleString()} XAF`],
                 [
                   "Platform Fee (3%)",
-                  `-${totalFee.toLocaleString()} XAF`,
+                  `-${displayFee.toLocaleString()} XAF`,
                   "color:#dc2626;",
                 ],
                 [
                   "Refund Sent to You",
-                  `${refundAmount.toLocaleString()} XAF`,
+                  `${displayRefund.toLocaleString()} XAF`,
                   "font-weight:700;color:#16a34a;font-size:15px;",
                 ],
                 ["Sent To", buyer.momo_number],

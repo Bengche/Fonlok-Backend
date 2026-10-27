@@ -184,7 +184,7 @@ const executePayout = async (invoiceId) => {
 
   // Seller always receives gross - 2%.  When a referrer exists, Fonlok keeps
   // only 1.5% and the 0.5% remainder goes to the referrer.
-  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
+  let totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
@@ -192,7 +192,7 @@ const executePayout = async (invoiceId) => {
   // API invoices may carry a developer split, paid out of the seller's share.
   const splitRow = isApiInvoice ? await getInvoiceSplit(invoiceRow.id) : null;
   const splitAmount = splitRow ? Number(splitRow.amount) : 0;
-  const sellerReceives = grossAmount - totalFee - splitAmount; // always gross - 2% - split (Campay takes 1% on top)
+  let sellerReceives = grossAmount - totalFee - splitAmount; // always gross - 2% - split (Campay takes 1% on top)
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -235,6 +235,10 @@ const executePayout = async (invoiceId) => {
       invoiceRow.invoicenumber,
     ],
   );
+  // The payout is recorded: from here on these values are only reported to
+  // users (webhook, notification), so show the combined 3% fee.
+  totalFee = Math.round(grossAmount * 0.03);
+  sellerReceives = grossAmount - totalFee - splitAmount;
   // Mark the invoice as completed so any subsequent release attempt gets a
   // clean, informative error at the route layer before it ever reaches the
   // atomic confirmation_codes lock.
@@ -339,13 +343,9 @@ const executePayout = async (invoiceId) => {
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
   // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
-  const emailDisplayFee = Math.round(
-    grossAmount * (hasReferral ? 0.025 : 0.03),
-  );
+  const emailDisplayFee = Math.round(grossAmount * 0.03);
   const emailSellerNet = grossAmount - emailDisplayFee;
-  const feeLabel = hasReferral
-    ? `${payoutCopy.feeLabel} (2.5%)`
-    : `${payoutCopy.feeLabel} (3%)`;
+  const feeLabel = `${payoutCopy.feeLabel} (3%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: payoutEmail,
@@ -442,7 +442,7 @@ const executePayout = async (invoiceId) => {
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
             [
-              buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
               invoiceRow.invoicenumber,
             ],
             [
@@ -554,7 +554,7 @@ const executePayoutLink = async (invoiceId) => {
   const referrerId = referrerCheck.rows[0]?.referred_by ?? null;
   const hasReferral = referrerId !== null;
 
-  const totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
+  let totalFee = Math.floor(grossAmount * TOTAL_FEE_RATE); // 2%
   const referralEarning = hasReferral
     ? Math.floor(grossAmount * REFERRAL_FEE_RATE) // 0.5% (referrer)
     : 0;
@@ -562,7 +562,7 @@ const executePayoutLink = async (invoiceId) => {
   // API invoices may carry a developer split, paid out of the seller's share.
   const splitRow = isApiInvoice ? await getInvoiceSplit(invoiceRow.id) : null;
   const splitAmount = splitRow ? Number(splitRow.amount) : 0;
-  const sellerReceives = grossAmount - totalFee - splitAmount; // gross - 2% - split
+  let sellerReceives = grossAmount - totalFee - splitAmount; // gross - 2% - split
 
   console.log(
     `Invoice ${invoiceRow.invoicenumber}: gross=${grossAmount}, ` +
@@ -605,6 +605,10 @@ const executePayoutLink = async (invoiceId) => {
       invoiceRow.invoicenumber,
     ],
   );
+  // The payout is recorded: from here on these values are only reported to
+  // users (webhook, notification), so show the combined 3% fee.
+  totalFee = Math.round(grossAmount * 0.03);
+  sellerReceives = grossAmount - totalFee - splitAmount;
   await db.query("UPDATE invoices SET status = 'completed' WHERE id = $1", [
     invoiceId,
   ]);
@@ -702,13 +706,9 @@ const executePayoutLink = async (invoiceId) => {
 
   const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
   // Email-only display values: combined fee (Fonlok 2% + Campay ~1%)
-  const emailDisplayFee = Math.round(
-    grossAmount * (hasReferral ? 0.025 : 0.03),
-  );
+  const emailDisplayFee = Math.round(grossAmount * 0.03);
   const emailSellerNet = grossAmount - emailDisplayFee;
-  const feeLabel = hasReferral
-    ? `${payoutCopy.feeLabel} (2.5%)`
-    : `${payoutCopy.feeLabel} (3%)`;
+  const feeLabel = `${payoutCopy.feeLabel} (3%)`;
   const sellerReceiptDownloadLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoiceRow.invoicenumber}`;
   const sellerReceiptMsg = {
     to: payoutEmail,
@@ -805,7 +805,7 @@ const executePayoutLink = async (invoiceId) => {
           <p style="color:#475569;">${releasedCopy.body(invoiceUser.name, invoiceRow.invoicename)}</p>
           ${emailTable([
             [
-              buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
               invoiceRow.invoicenumber,
             ],
             [
@@ -1157,13 +1157,15 @@ router.get("/release-milestone/:token", async (req, res) => {
     const milestoneAmount = Number(milestone.amount);
     const totalFee = Math.floor(milestoneAmount * TOTAL_FEE_RATE);
     const sellerReceives = milestoneAmount - totalFee;
+    const displaySellerReceives =
+      milestoneAmount - Math.round(milestoneAmount * 0.03);
 
     // Show branded confirmation page â€” payout does NOT happen yet
     return res.send(
       renderPage({
         type: "warning",
         title: `Release Payment for "${milestone.label}"?`,
-        body: `You are about to release <strong>${sellerReceives.toLocaleString()} XAF</strong> to the seller for milestone <strong>${milestone.label}</strong> on invoice <strong>${milestone.invoicenumber}</strong>.`,
+        body: `You are about to release <strong>${displaySellerReceives.toLocaleString()} XAF</strong> to the seller for milestone <strong>${milestone.label}</strong> on invoice <strong>${milestone.invoicenumber}</strong>.`,
         warningBox:
           "<strong>This action cannot be undone.</strong><br>Only confirm if you have received what was agreed for this milestone. If there is an issue, contact the seller before proceeding.",
         formAction: `/api/release-milestone/${token}`,
@@ -1279,6 +1281,9 @@ router.post("/release-milestone/:token", async (req, res) => {
       ? Math.floor(milestoneAmount * REFERRAL_FEE_RATE)
       : 0;
     const sellerReceives = milestoneAmount - totalFee;
+    // Display-only: users are always shown the combined 3% fee
+    const displayFee = Math.round(milestoneAmount * 0.03);
+    const displaySellerReceives = milestoneAmount - displayFee;
 
     // 6. CamPay payout
     const campayAuthMs = await axios.post(
@@ -1318,10 +1323,10 @@ router.post("/release-milestone/:token", async (req, res) => {
       milestone.seller_user_id,
       "milestone_released",
       "Milestone Payout Sent",
-      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
+      `${displaySellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
       {
         milestoneLabel: milestone.label,
-        amount: sellerReceives,
+        amount: displaySellerReceives,
         invoiceNumber: milestone.invoicenumber,
       },
     );
@@ -1368,23 +1373,23 @@ router.post("/release-milestone/:token", async (req, res) => {
 
     // 11. Email seller receipt (non-fatal)
     try {
-      const feeLabel = hasReferral ? "Fonlok Fee (2.5%)" : "Fonlok Fee (3%)";
+      const feeLabel = "Fonlok Fee (3%)";
       const receiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${milestone.invoicenumber}`;
       await sgMail.send({
         to: seller.email,
         from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
         subject: `Milestone Payment Released - ${milestone.label} | Fonlok`,
         html: emailWrap(
-          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent â€” ${milestone.label}</h2>
+          `<h2 style="color:#0F1F3D;margin:0 0 12px;">Milestone Payment Sent - ${milestone.label}</h2>
           <p style="color:#475569;">Hello ${seller.name}, the buyer has confirmed <strong>${milestone.label}</strong> for invoice <strong>${milestone.invoicename}</strong> and your payment has been processed.</p>
           ${emailTable([
             ["Invoice", milestone.invoicenumber],
             ["Milestone", milestone.label],
             ["Gross Amount", `${milestoneAmount} XAF`],
-            [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+            [feeLabel, `-${displayFee} XAF`, "color:#dc2626;"],
             [
               "Amount Sent to You",
-              `${sellerReceives} XAF`,
+              `${displaySellerReceives} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
             ["Sent To", seller.phone],
@@ -1421,7 +1426,7 @@ router.post("/release-milestone/:token", async (req, res) => {
           : "en";
         const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
         const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${milestone.invoicenumber}`;
-        const feeLabel = hasReferral ? "Fonlok Fee (2.5%)" : "Fonlok Fee (3%)";
+        const feeLabel = "Fonlok Fee (3%)";
         await sgMail.send({
           to: buyer.email,
           from: { email: process.env.VERIFIED_SENDER, name: "Fonlok" },
@@ -1431,15 +1436,15 @@ router.post("/release-milestone/:token", async (req, res) => {
             <p style="color:#475569;">${releasedCopy.body(seller.name, milestone.invoicename)}</p>
             ${emailTable([
               [
-                buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
                 milestone.invoicenumber,
               ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
               [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
-              [feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+              [feeLabel, `-${displayFee} XAF`, "color:#dc2626;"],
               [
                 releasedCopy.sellerReceived,
-                `${sellerReceives} XAF`,
+                `${displaySellerReceives} XAF`,
                 "font-weight:700;color:#16a34a;font-size:15px;",
               ],
             ])}
@@ -1468,7 +1473,7 @@ router.post("/release-milestone/:token", async (req, res) => {
       renderPage({
         type: "success",
         title: "Payment Released",
-        body: `You have successfully released the payment for <strong>${milestone.label}</strong>. The seller has been notified and <strong>${sellerReceives.toLocaleString()} XAF</strong> is on its way to their account.`,
+        body: `You have successfully released the payment for <strong>${milestone.label}</strong>. The seller has been notified and <strong>${displaySellerReceives.toLocaleString()} XAF</strong> is on its way to their account.`,
         ctaHref: reviewHref,
         ctaLabel: "Leave a Review for This Seller",
         note: "Thank you for using Fonlok. You may close this page.",
@@ -1588,6 +1593,9 @@ router.post("/release-milestone/confirm", async (req, res) => {
     const msFonlokNet = msTotalFee - msReferralEarning;
     const sellerReceives = milestoneAmount - msTotalFee;
     const fonlokFee = msTotalFee;
+    // Display-only: users are always shown the combined 3% fee
+    const displayFee = Math.round(milestoneAmount * 0.03);
+    const displaySellerReceives = milestoneAmount - displayFee;
 
     // 7. Campay transfer
     const campayAuth3 = await axios.post(
@@ -1627,10 +1635,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
       invoice.userid,
       "milestone_released",
       "Milestone Payout Sent",
-      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: \"${milestone.label}\".`,
+      `${displaySellerReceives} XAF has been sent to your Mobile Money account for milestone: \"${milestone.label}\".`,
       {
         milestoneLabel: milestone.label,
-        amount: sellerReceives,
+        amount: displaySellerReceives,
         invoiceNumber: invoice.invoicenumber,
       },
     );
@@ -1701,9 +1709,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
           pdfErr.message,
         );
       }
-      const msFeeLabel = hasReferralMs
-        ? "Fonlok Fee (2.5%)"
-        : "Fonlok Fee (3%)";
+      const msFeeLabel = "Fonlok Fee (3%)";
       const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
       const sellerMsg = {
         to: seller.email,
@@ -1716,10 +1722,10 @@ router.post("/release-milestone/confirm", async (req, res) => {
             ["Invoice", invoice.invoicenumber],
             ["Milestone", milestone.label],
             ["Gross Amount", `${milestoneAmount} XAF`],
-            [msFeeLabel, `-${fonlokFee} XAF`, "color:#dc2626;"],
+            [msFeeLabel, `-${displayFee} XAF`, "color:#dc2626;"],
             [
               "Amount Sent to You",
-              `${sellerReceives} XAF`,
+              `${displaySellerReceives} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
             ["Sent To", seller.phone],
@@ -1757,6 +1763,8 @@ router.post("/release-milestone/confirm", async (req, res) => {
       const releasedCopy = buildEmailCopy(buyerLang, "fundsReleased");
       const milestoneAmt = Number(milestone.amount);
       const msTotalFee = Math.floor(milestoneAmt * TOTAL_FEE_RATE);
+      const buyerDisplayFee = Math.round(milestoneAmt * 0.03);
+      const buyerDisplayNet = milestoneAmt - buyerDisplayFee;
       const reviewLink = `${process.env.FRONTEND_URL}/review/${seller.username}/${invoice.invoicenumber}`;
       await sgMail.send({
         to: buyerRow.email,
@@ -1767,15 +1775,15 @@ router.post("/release-milestone/confirm", async (req, res) => {
           <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
           ${emailTable([
             [
-              buyerLang === "fr" ? "Num\u00e9ro de facture" : "Invoice Number",
+              buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
               invoice.invoicenumber,
             ],
             [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
             [releasedCopy.grossAmount, `${milestoneAmt} XAF`],
-            [releasedCopy.feeLabel, `-${msTotalFee} XAF`, "color:#dc2626;"],
+            [releasedCopy.feeLabel, `-${buyerDisplayFee} XAF`, "color:#dc2626;"],
             [
               releasedCopy.sellerReceived,
-              `${sellerReceives} XAF`,
+              `${buyerDisplayNet} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
           ])}
@@ -1798,7 +1806,7 @@ router.post("/release-milestone/confirm", async (req, res) => {
     }
 
     return res.status(200).json({
-      message: `Payment released successfully. ${sellerReceives.toLocaleString()} XAF sent to the seller.`,
+      message: `Payment released successfully. ${displaySellerReceives.toLocaleString()} XAF sent to the seller.`,
       sellerReceives,
       milestoneLabel: milestone.label,
       allComplete: remaining === 0,
@@ -1926,6 +1934,9 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       : 0;
     const sellerReceives = milestoneAmount - totalFee;
     const fonlokFee = totalFee;
+    // Display-only: users are always shown the combined 3% fee
+    const displayFee = Math.round(milestoneAmount * 0.03);
+    const displaySellerReceives = milestoneAmount - displayFee;
 
     // 9. Campay transfer
     const campayAuth4 = await axios.post(
@@ -1965,10 +1976,10 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       invoice.userid,
       "milestone_released",
       "Milestone Payout Sent",
-      `${sellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
+      `${displaySellerReceives} XAF has been sent to your Mobile Money account for milestone: "${milestone.label}".`,
       {
         milestoneLabel: milestone.label,
-        amount: sellerReceives,
+        amount: displaySellerReceives,
         invoiceNumber: invoice.invoicenumber,
       },
     );
@@ -2035,9 +2046,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
       }
       const sellerLanguage = await getUserEmailLanguageById(invoice.userid);
       const payoutCopy = buildEmailCopy(sellerLanguage, "payoutConfirmed");
-      const msFeeLabelLocalized = hasReferral
-        ? `${payoutCopy.feeLabel} (2.5%)`
-        : `${payoutCopy.feeLabel} (3%)`;
+      const msFeeLabelLocalized = `${payoutCopy.feeLabel} (3%)`;
       const milestoneReceiptLink = `${process.env.BACKEND_URL}/invoice/receipt/${invoice.invoicenumber}`;
       const sellerMsg = {
         to: seller.email,
@@ -2053,17 +2062,17 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             ],
             [sellerLanguage === "fr" ? "Jalon" : "Milestone", milestone.label],
             [payoutCopy.grossAmount, `${milestoneAmount} XAF`],
-            [msFeeLabelLocalized, `-${totalFee} XAF`, "color:#dc2626;"],
+            [msFeeLabelLocalized, `-${displayFee} XAF`, "color:#dc2626;"],
             [
               payoutCopy.amountSent,
-              `${sellerReceives} XAF`,
+              `${displaySellerReceives} XAF`,
               "font-weight:700;color:#16a34a;font-size:15px;",
             ],
             [payoutCopy.sentTo, seller.phone],
           ])}
           ${
             remaining === 0
-              ? `<p style="color:#16a34a;font-weight:600;margin-top:12px;">${sellerLanguage === "fr" ? "Tous les jalons ont Ã©tÃ© libÃ©rÃ©s. Cette facture est maintenant complÃ¨te." : "All milestones have been released. This invoice is now complete."}</p>`
+              ? `<p style="color:#16a34a;font-weight:600;margin-top:12px;">${sellerLanguage === "fr" ? "Tous les jalons ont été libérés. Cette facture est maintenant complète." : "All milestones have been released. This invoice is now complete."}</p>`
               : `<p style="color:#475569;margin-top:12px;">${sellerLanguage === "fr" ? "Jalons restants" : "Remaining milestones"}: <strong>${remaining}</strong></p>`
           }
           ${emailButton(milestoneReceiptLink, payoutCopy.downloadButton)}`,
@@ -2102,15 +2111,15 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
             <p style="color:#475569;">${releasedCopy.body(seller.name, invoice.invoicename)}</p>
             ${emailTable([
               [
-                buyerLang === "fr" ? "NumÃ©ro de facture" : "Invoice Number",
+                buyerLang === "fr" ? "Numéro de facture" : "Invoice Number",
                 invoice.invoicenumber,
               ],
               [buyerLang === "fr" ? "Jalon" : "Milestone", milestone.label],
               [releasedCopy.grossAmount, `${milestoneAmount} XAF`],
-              [releasedCopy.feeLabel, `-${totalFee} XAF`, "color:#dc2626;"],
+              [releasedCopy.feeLabel, `-${displayFee} XAF`, "color:#dc2626;"],
               [
                 releasedCopy.sellerReceived,
-                `${sellerReceives} XAF`,
+                `${displaySellerReceives} XAF`,
                 "font-weight:700;color:#16a34a;font-size:15px;",
               ],
             ])}
@@ -2134,7 +2143,7 @@ router.post("/release-milestone/by-user", authMiddleware, async (req, res) => {
     }
 
     return res.status(200).json({
-      message: `Payment released successfully. ${sellerReceives.toLocaleString()} XAF sent to the seller.`,
+      message: `Payment released successfully. ${displaySellerReceives.toLocaleString()} XAF sent to the seller.`,
       sellerReceives,
       milestoneLabel: milestone.label,
       allComplete: remaining === 0,
